@@ -466,6 +466,13 @@ export class GuideController {
             if (!valid())
                 return { ok: false, error: '保存期间已切换，对抗气泡不再显示' };
             this.syncAdversaryDirector();
+            if (observed.publicIncomplete) {
+                stage('私有处理已提交；公开台词缺失，可长按补生成，不重复推进');
+                this.lastOutcome = { ...observed, adversary: true, result: { guidance: observed.guidance ?? '', commentary: observed.commentary ?? '', emotion: observed.emotion ?? 'calm' } };
+                this.lastError = '公开台词为空或不完整；私有处理已提交，可长按补生成，不重复推进';
+                this.ui?.say?.(this.lastError, { emotion: 'calm' });
+                return { ...observed, ok: false, adversary: true, error: this.lastError };
+            }
             if (observed.duplicate && !observed.publicCacheAvailable) {
                 stage('该楼已提交；旧版本未保存公开结果，不重复推进');
                 this.ui?.say?.('这份正文已经观测过了哦。旧记录没有保存公开低语，不能靠再推进一次来补写；下一楼会正常观测。', { emotion: 'calm' });
@@ -669,7 +676,7 @@ export class GuideController {
             // 没有吐槽时至少让气泡说点什么，否则用户点了她一下却一片安静
             this.ui?.say?.(String(result.guidance), { emotion: result.emotion });
         } else {
-            this.ui?.say?.('', { emotion: result.emotion });
+            this.ui?.setTyping?.(false); // 没有台词不打开作者标题空壳
         }
 
         // ③ 记记忆（去重 + 幂等 + 冷却基准）
@@ -696,7 +703,8 @@ export class GuideController {
         const usedHooks = Array.isArray(result.hooks_used) && result.hooks_used.length
             ? `　线索：${result.hooks_used.join('、')}`
             : '';
-        this.log(`已出声（${result.emotion}）：「${result.guidance || result.commentary}」${usedHooks}`);
+        if (result.guidance || result.commentary) this.log(`已出声（${result.emotion}）：「${result.guidance || result.commentary}」${usedHooks}`);
+        else this.log('公开通道没有台词，未投放公开输出');
 
         // 收起「正在观测…」。放在最后：气泡内容的打字动画是独立跑的，
         // 这里只负责把状态条撤掉。

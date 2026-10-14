@@ -9,7 +9,7 @@ test('adversary delivers guidance in display, commentary bubble, plans privately
  const bubbles=[]; const ctx={name2:'actor',chatId:'channels',chatMetadata:{},chat:[{is_user:true,mes:'我观察大厅。'},{mes:'商人站在大厅。'}],saveMetadata:async()=>{},setExtensionPrompt:()=>{}};
  const app=new GuideController(ctx,settings); app.ui={say:v=>bubbles.push(v)};
  const old=LlmClient.prototype.complete; let calls=0;
- LlmClient.prototype.complete=async req=>{calls++;return {ok:true,text:JSON.stringify(req.system.startsWith('Observe neutral events')?{proposals:[]}:{guidance:'门边的风声很轻，你不妨再听一会。',commentary:'哈哈，你总是这么谨慎呢。',emotion:'smile',proposals:[{type:'plan',plotId:'private',stage:'planned',plan:{objective:'SECRET_CHAIN',traceObjective:'门边出现划痕',apprentice:{name:'商人',introduce:false,evidence:[{index:1,quote:'商人站在大厅',conditionId:''}]},conditions:[{id:'c',event:'门关闭',counter:'移除门'}]},evidence:[],results:[]}]}),meta:{mode:'custom'}};};
+ LlmClient.prototype.complete=async req=>{calls++;return {ok:true,text:JSON.stringify(req.system?.startsWith('Observe neutral events')?{proposals:[]}:{guidance:'门边的风声很轻，你不妨再听一会。',commentary:'哈哈，你总是这么谨慎呢。',emotion:'smile',proposals:[{type:'plan',plotId:'private',stage:'planned',plan:{objective:'SECRET_CHAIN',traceObjective:'门边出现划痕',apprentice:{name:'商人',introduce:false,evidence:[{index:1,quote:'商人站在大厅',conditionId:''}]},conditions:[{id:'c',event:'门关闭',counter:'移除门'}]},evidence:[],results:[]}]}),meta:{mode:'custom'}};};
  try {
  const out=await app.runPostGeneration(); assert.equal(out.ok,true);assert.equal(calls,2);
  assert.equal(ctx.chat[1].mes,'商人站在大厅。');assert.match(ctx.chat[1].extra.display_text,/门边的风声/);assert.ok(!ctx.chat[1].extra.display_text.includes('SECRET_CHAIN'));

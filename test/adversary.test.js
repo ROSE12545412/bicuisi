@@ -154,12 +154,13 @@ describe('Evidence-gated optional fictional adversary', () => {
             for (const mutate of [ctx => { ctx.chatMetadata = {}; }, ctx => { ctx.chatId = 'b'; }, ctx => { ctx.name2 = 'Other'; }, (ctx, s) => { s.realm = 'beatrice'; }, ctx => { ctx.chat[0].mes += ' edited'; }, ctx => { ctx.chat[0].swipe_id = 1; }, ctx => { clearAdversaryState(ctx); }]) {
                 const ctx = context(), s = settings(); let calls = 0;
                 LlmClient.prototype.complete = async function(req) {
-                    calls++; assert.ok(req.user.includes(ctx.chat[0].mes)); mutate(ctx, s);
+                    calls++; assert.ok((req.user ?? req.messages.at(-1).content).includes(ctx.chat[0].mes)); mutate(ctx, s);
                     return { ok: true, text: JSON.stringify({ proposals: [plan()], commentary: 'SECRET PLAN', emotion: 'smug' }) };
                 };
                 const out = await observeAdversary(ctx, s); assert.equal(out.ok, false); assert.equal(out.commentary, ''); assert.equal(calls, 1);
             }
             const ctx = context(), s = settings();
+            s.guidance = { enabled: false };
             LlmClient.prototype.complete = async () => ({ ok: true, text: JSON.stringify({ proposals: [plan()], commentary: 'SECRET PLAN', emotion: 'smug' }) });
             const out = await observeAdversary(ctx, s);
             assert.equal(out.ok, true); assert.equal(out.guidance, ''); assert.ok(!out.commentary.includes('SECRET'));

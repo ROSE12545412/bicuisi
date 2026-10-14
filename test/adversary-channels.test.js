@@ -38,7 +38,7 @@ test('mocked transport returns independent model speech, keeps plans private and
     assert.equal(out.ledger.plots[0].plan.objective, 'PRIVATE-TRAP-OBJECTIVE');
     assert.equal(out.ledger.plots[0].stage, 'planned');
     assert.equal(out.ledger.snapshots.length, 1);
-    const system = f.requests[0][1][0].content;
+    const system = f.requests[0][1].at(-2).content;
     for (const rule of ['Three independent channels', 'partial truths', 'misleading lure', 'rationalize', 'cannot change canon', 'erase evidence', 'control user choices', 'not Beatrice', 'chain of thought']) assert.ok(system.includes(rule), rule);
     const repeat = await observeAdversary(f.ctx, f.s);
     assert.equal(repeat.ok, true);

@@ -2314,10 +2314,9 @@ export function buildDiagnostics(/** @type {any} */ app, { includeStory = false 
         // 单独列一行「代码修订」：只有它能区分两个构建。
         // 'version' 是语义版本，发布时才动 —— 排查「更新生效了吗」不能靠它。
         `代码修订：${CODE_REVISION}`,
-        `人设提示词：第 ${Number(app.settings?.persona?.promptsVersion) || 0} 版` +
-            (Number(app.settings?.persona?.promptsVersion) >= BUILTIN_PROMPTS_VERSION
-                ? '（已是最新）'
-                : `（⚠️ 落后于内置的第 ${BUILTIN_PROMPTS_VERSION} 版 —— 重启酒馆会自动升级）`),
+        isVoid(app.settings)
+            ? `当前人设：人神（voidPersona）；${app.settings?.voidPersona?.overridePrompt || app.settings?.voidPersona?.prompts?.length ? '使用独立编辑副本' : '使用内置默认'}，对抗请求使用此人设；贝蒂配置仅保留未使用`
+            : `当前人设：贝翠丝（persona）；提示词第 ${Number(app.settings?.persona?.promptsVersion) || 0} 版`,
         `时间：${new Date().toISOString()}`,
         '公开报告：默认不包含剧情或用户文本',
         '',

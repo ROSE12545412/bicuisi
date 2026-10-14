@@ -8,7 +8,7 @@ for (const mode of ['append','message']) test(`manual adversary retry commits on
  const ctx={name2:'a',chatId:'retry',chatMetadata:{},chat:[{mes:'大厅空无一人。'}],saveMetadata:async()=>{},setExtensionPrompt:()=>{}};
  const app=new GuideController(ctx,s);const bubbles=[];app.ui={say:t=>bubbles.push(t)};
  const old=LlmClient.prototype.complete;let facts=0,compose=0;
- LlmClient.prototype.complete=async req=>{if(req.system.startsWith('Observe neutral events')){facts++;return {ok:true,text:'{"proposals":[]}'};}compose++;return compose===1?{ok:false,error:'temporary failure'}:{ok:true,text:'{"guidance":"再看看门边吧。","commentary":"别急嘛。","emotion":"calm","proposals":[]}'};};
+ LlmClient.prototype.complete=async req=>{if(req.system?.startsWith('Observe neutral events')){facts++;return {ok:true,text:'{"proposals":[]}'};}compose++;return compose===1?{ok:false,error:'temporary failure'}:{ok:true,text:'{"guidance":"再看看门边吧。","commentary":"别急嘛。","emotion":"calm","proposals":[]}'};};
  try{
   assert.equal((await app.askNow({force:true})).ok,false);assert.equal(app.adversaryState().lastTargetIndex,-1);
   assert.equal((await app.askNow({force:true})).ok,true);assert.equal(app.adversaryState().lastTargetIndex,0);assert.equal(facts,1);assert.equal(compose,2);

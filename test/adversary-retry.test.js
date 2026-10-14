@@ -59,11 +59,15 @@ test('adversary empty proposals are completed and cached including empty public 
     assert.equal(first.ok, true);
     assert.equal(first.ledger.lastTargetIndex, 0);
     assert.deepEqual(first.ledger.plots, []);
+    assert.equal(first.publicIncomplete, true);
+    f.reply = { guidance: '门边还留着脚印。', commentary: '哎呀，风凉起来了。', emotion: 'smile' };
     const repeat = await observeAdversary(f.ctx, f.s);
     assert.equal(repeat.ok, true);
     assert.equal(repeat.publicCacheAvailable, true);
-    assert.deepEqual(publicFields(repeat), publicFields(first));
-    assert.equal(f.requests.length, 1);
+    assert.equal(repeat.publicRepaired, true);
+    assert.equal(repeat.publicIncomplete, false);
+    assert.equal(repeat.ledger.lastTargetIndex, first.ledger.lastTargetIndex);
+    assert.equal(f.requests.length, 2);
 });
 
 test('adversary edit and swipe invalidate exact-prefix cached success', async () => {
@@ -108,13 +112,15 @@ test('adversary legacy processed ledgers never rerun proposals when public cache
     await observeAdversary(f.ctx, f.s);
     delete stored(f).publicCache;
     stored(f).snapshots.forEach(s => { delete s.state.publicCache; });
+    f.reply = { guidance: '门口倒挺安静。', commentary: '你也在等风停吗？', emotion: 'calm' };
     const repeat = await observeAdversary(f.ctx, f.s);
     assert.equal(repeat.ok, true);
     assert.equal(repeat.duplicate, true);
-    assert.equal(repeat.publicCacheAvailable, false);
-    assert.deepEqual(publicFields(repeat), { guidance: '', commentary: '', emotion: 'calm' });
+    assert.equal(repeat.publicCacheAvailable, true);
+    assert.equal(repeat.publicRepaired, true);
+    assert.deepEqual(publicFields(repeat), f.reply);
     assert.equal(repeat.ledger.plots.length, 1);
-    assert.equal(f.requests.length, 1);
+    assert.equal(f.requests.length, 2);
 });
 
 test('adversary corrupted imported public cache fails closed without losing completed marker', async () => {
@@ -123,13 +129,15 @@ test('adversary corrupted imported public cache fails closed without losing comp
         await observeAdversary(f.ctx, f.s);
         Object.assign(stored(f).publicCache[0], patch);
         Object.assign(stored(f).snapshots[0].state.publicCache[0], patch);
+        f.reply = { guidance: '门边的风很凉。', commentary: '你看起来还挺精神。', emotion: 'calm' };
         const repeat = await observeAdversary(f.ctx, f.s);
         assert.equal(repeat.ok, true);
         assert.equal(repeat.duplicate, true);
-        assert.equal(repeat.publicCacheAvailable, false, JSON.stringify(patch));
+        assert.equal(repeat.publicCacheAvailable, true, JSON.stringify(patch));
+        assert.equal(repeat.publicRepaired, true);
         assert.equal(repeat.ledger.lastTargetIndex, 0);
-        assert.equal(f.requests.length, 1);
-        assert.deepEqual(repeat.ledger.publicCache, []);
+        assert.equal(f.requests.length, 2);
+        assert.equal(repeat.ledger.publicCache.length, 1);
     }
 });
 
@@ -145,9 +153,10 @@ test('adversary public cache and every snapshot cache are bounded and sanitized'
     assert.ok(ledger.snapshots.every(s => s.state.publicCache.length <= 24));
     assert.ok(ledger.publicCache.every(c => c.guidance === 'G'.repeat(400) && c.commentary === 'C'.repeat(400)));
     const old = await observeAdversary(f.ctx, f.s, { targetIndex: 0 });
-    assert.equal(old.ok, true);
+    assert.equal(old.ok, false);
+    assert.match(old.error, /no retained latest-target snapshot/);
     assert.equal(old.duplicate, true);
-    assert.equal(old.publicCacheAvailable, false);
+    assert.equal(old.publicIncomplete, true);
     assert.equal(f.requests.length, 30);
 });
 

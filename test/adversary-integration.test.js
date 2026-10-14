@@ -6,7 +6,7 @@ import { LlmClient } from '../src/llm/client.js';
 import { setDirectorPrompt, directorStatus, ADVERSARY_PROMPT_KEY } from '../src/adversary-director.js';
 
 function setup() {
-    const settings = defaultSettings(); settings.realm = 'void'; settings.adversary.enabled = true;
+    const settings = defaultSettings(); settings.realm = 'void'; settings.adversary.enabled = true; settings.guidance.enabled = false;
     const calls = [];
     const ctx = { name2: 'actor', chatId: 'test', chatMetadata: {}, chat: [{ is_user: true, mes: '我走进大厅' }, { mes: '商人站在大厅，门锁损坏。' }], setExtensionPrompt: (...args) => calls.push(args), saveMetadata: async () => {} };
     const app = new GuideController(ctx, settings);
@@ -27,7 +27,9 @@ test('post-prose controller observes shared facts first, persists separate ledge
     const { app, ctx, settings, calls, bubbles } = setup();
     const old = LlmClient.prototype.complete; const requests = [];
     const fact = { id: 'damaged-lock', actor: '门锁', action: '损坏', result: '门锁损坏', status: 'confirmed', knowledge: [], evidence: [{ index: 1, quote: '门锁损坏。' }] };
-    LlmClient.prototype.complete = async ({ system, user }) => {
+    LlmClient.prototype.complete = async (req) => {
+        const system = req.system ?? req.messages.filter(m => m.role === 'system').map(m => m.content).join('\n');
+        const user = req.user ?? req.messages.at(-1).content;
         if (system.startsWith('Observe neutral events, relationships and information in completed roleplay prose.')) {
             requests.push('facts');
             const input = JSON.parse(user);
