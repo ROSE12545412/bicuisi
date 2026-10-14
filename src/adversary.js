@@ -5,6 +5,7 @@
 import { LlmClient } from './llm/client.js';
 import { EMOTIONS } from './config.js';
 import { characterKey } from './core/store.js';
+import { characterSourceStamp } from './card-source.js';
 import { isInjectedMessage } from './context.js';
 import { formatFactsForPrompt, getFactState, uncertainContext } from './facts.js';
 
@@ -17,7 +18,7 @@ const maxPlots = settings => Math.max(1, Math.min(3, Math.floor(Number(settings?
 const clone = value => JSON.parse(JSON.stringify(value));
 const text = (value, max = 400) => typeof value === 'string' ? value.replace(/[\u0000-\u001f]/g, ' ').trim().slice(0, max) : '';
 const owner = ctx => JSON.stringify([ctx?.chatId ?? null, ctx?.groupId ?? null, characterKey(ctx)]);
-const cardSource = ctx => JSON.stringify(ctx?.characters?.[ctx?.characterId] ?? [ctx?.characterId ?? null, ctx?.name2 ?? '']);
+const cardSource = characterSourceStamp;
 // Collision-free prefix fingerprints include ALL messages, including users and swipe ids.
 const fingerprints = ctx => (Array.isArray(ctx?.chat) ? ctx.chat : []).map(m => JSON.stringify([
     m?.mes ?? '', m?.swipe_id ?? null, Boolean(m?.is_user), Boolean(m?.is_system),

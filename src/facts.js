@@ -5,6 +5,7 @@
  */
 import { LlmClient } from './llm/client.js';
 import { characterKey } from './core/store.js';
+import { characterSourceStamp } from './card-source.js';
 import { isInjectedMessage } from './context.js';
 
 const KEY = 'beatrice-guide';
@@ -12,7 +13,7 @@ const epochs = new WeakMap();
 const epoch = meta => epochs.get(meta) ?? 0;
 const clone = value => JSON.parse(JSON.stringify(value));
 const owner = ctx => JSON.stringify([ctx?.chatId ?? null, ctx?.groupId ?? null, characterKey(ctx)]);
-const card = ctx => JSON.stringify(ctx?.characters?.[ctx?.characterId] ?? [ctx?.characterId ?? null, ctx?.name2 ?? '']);
+const card = characterSourceStamp;
 const fingerprints = ctx => (Array.isArray(ctx?.chat) ? ctx.chat : []).map(m => JSON.stringify([
     m?.mes ?? '', Boolean(m?.is_user), Boolean(m?.is_system), m?.swipe_id ?? null,
     m?.name ?? '', Boolean(isInjectedMessage(m)),
