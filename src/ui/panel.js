@@ -539,6 +539,12 @@ function sectionLlm(/** @type {any} */ app, /** @type {any} */ s, /** @type {Fun
             }),
         }),
         field({
+            label: '结构化请求输出预算',
+            hint: '事实/定位/人神等 JSON 请求的最低输出额度（含推理）。默认 8192；推理模型可调到 16384～32768，成本和等待可能增加。0 表示沿用各任务额度，不会自动重试。',
+            control: numberInput({ value: s.llm.structuredMaxTokens, min: 0, max: 32768, step: 1024,
+                onChange: v => { s.llm.structuredMaxTokens = v; commit('结构化输出预算'); } }),
+        }),
+        field({
             label: '超时（毫秒）',
             control: numberInput({
                 value: s.llm.timeoutMs,

@@ -29,7 +29,7 @@ export const EXT_ID = 'beatrice-guide';
  * 所以单独加这个号：`诊断页`、`/bg-status`、`/bg-test` 都会显示它。
  * 判断"更新生效了吗"只需要对比这一个字符串。
  */
-export const CODE_REVISION = 'r2026-10-12.29';
+export const CODE_REVISION = 'r2026-10-12.30';
 
 export const EXT_NAME = '碧翠丝的禁书库';
 
@@ -257,6 +257,7 @@ export function defaultSettings() {
             },
             temperature: 1.0,
             maxTokens: 800,
+            structuredMaxTokens: 8192,
             timeoutMs: 45000,
         },
 
@@ -435,7 +436,8 @@ export function normalizeSettings(settings) {
 
     if (!LLM_MODES.includes(s.llm.mode)) s.llm.mode = 'profile';
     s.llm.temperature = clampNum(s.llm.temperature, 0, 2, 1.0);
-    s.llm.maxTokens = clampInt(s.llm.maxTokens, 32, 8192, 800);
+    s.llm.maxTokens = clampInt(s.llm.maxTokens, 32, 32768, 800);
+    s.llm.structuredMaxTokens = clampInt(s.llm.structuredMaxTokens, 0, 32768, 8192);
     s.llm.timeoutMs = clampInt(s.llm.timeoutMs, 3000, 300000, 45000);
     // 缓存的模型列表：去重、去空、限长（防止有人手改设置塞进来几万条）
     s.llm.custom.modelList = cleanStringList(s.llm.custom.modelList, 500);

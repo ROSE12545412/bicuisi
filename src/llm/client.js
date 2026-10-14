@@ -439,7 +439,9 @@ export class LlmClient {
             return { ok: false, text: '', error: '没有可发送的消息内容', meta: {} };
         }
 
-        const maxTokens = Math.max(32, Math.min(8192, Number(req.maxTokens ?? this.config.maxTokens) || 400));
+        const baseTokens = Number(req.maxTokens ?? this.config.maxTokens) || 400;
+        const structuredBudget = req.jsonSchema ? Number(this.config.structuredMaxTokens) || 0 : 0;
+        const maxTokens = Math.max(32, Math.min(32768, Math.max(baseTokens, structuredBudget)));
         const configuredTemperature = Number(req.temperature ?? this.config.temperature);
         const temperature = Number.isFinite(configuredTemperature) ? configuredTemperature : 1.0;
         const timeoutMs = Math.max(3000, Number(this.config.timeoutMs) || 45000);
@@ -481,7 +483,7 @@ export class LlmClient {
         } catch (e) {
             reportStatus = timeoutError ? 'timeout' : (isAbortError(e) || signal?.aborted ? 'aborted' : 'failed');
             const message = describeError(e);
-            report.failureCode = /为空|空内容|结构不认识/.test(message) ? 'empty_or_unknown_content' : /不是合法 JSON/.test(message) ? 'invalid_json' : /^HTTP \d+/.test(message) ? 'http_error' : reportStatus === 'failed' ? 'transport_error' : reportStatus;
+            report.failureCode = /推理耗尽/.test(message) ? 'reasoning_budget_exhausted' : /为空|空内容|结构不认识/.test(message) ? 'empty_or_unknown_content' : /不是合法 JSON/.test(message) ? 'invalid_json' : /^HTTP \d+/.test(message) ? 'http_error' : reportStatus === 'failed' ? 'transport_error' : reportStatus;
             if (timeoutError) return { ok: false, text: '', error: timeoutError.message, meta };
             if (isAbortError(e) || signal?.aborted) {
                 return { ok: false, text: '', error: ABORT_MESSAGE, meta, aborted: true };
@@ -698,7 +700,13 @@ export class LlmClient {
         }
         const text = extractContent(payload);
         opts.onResponse?.({ httpStatus: res.status, ok: res.ok, json: true, shape: responseShape(payload), extractedChars: text.length });
-        if (!text) throw new Error('端点返回内容为空或结构不认识（请在诊断页复制错误报告）');
+        if (!text) {
+            const shape = responseShape(payload);
+            if (shape.finishReason === 'length' && (shape.reasoningChars > 0 || shape.usage.reasoning > 0)) {
+                throw new Error(`推理耗尽输出预算（${opts.maxTokens} token），最终答案为空；请提高 API 页结构化请求输出预算或换非推理模型。不会自动重试。`);
+            }
+            throw new Error('端点返回内容为空或结构不认识（请在诊断页复制错误报告）');
+        }
         return text;
     }
 }
