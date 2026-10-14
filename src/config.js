@@ -29,7 +29,7 @@ export const EXT_ID = 'beatrice-guide';
  * 所以单独加这个号：`诊断页`、`/bg-status`、`/bg-test` 都会显示它。
  * 判断"更新生效了吗"只需要对比这一个字符串。
  */
-export const CODE_REVISION = 'r2026-10-12.25';
+export const CODE_REVISION = 'r2026-10-12.26';
 
 export const EXT_NAME = '碧翠丝的禁书库';
 

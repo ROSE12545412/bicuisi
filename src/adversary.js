@@ -260,7 +260,19 @@ export async function observeAdversary(ctx, settings, { signal, targetIndex, sou
         jsonSchema: ADVERSARY_SCHEMA, maxTokens: 2400, temperature: 0.2, signal,
     });
     responseMeta = response.meta ?? {};
-    if (!isCurrent() || JSON.stringify(container.facts) !== factStamp || signal?.aborted || ctx.chatMetadata !== meta || epoch(meta) !== generationEpoch || meta[KEY] !== container || ctx.chat !== source || owner(ctx) !== identity || cardSource(ctx) !== cardStamp || JSON.stringify(fingerprints(ctx)) !== JSON.stringify(prefix) || JSON.stringify([settings.enabled, settings.realm, settings.adversary, settings.llm]) !== mode || JSON.stringify(container.adversary) !== ledgerStamp) return fail('Stale response: identity/mode/source/ledger changed');
+    const liveContainer = meta[KEY];
+    const staleReasons = [];
+    if (!isCurrent()) staleReasons.push('controller lifecycle changed');
+    if (signal?.aborted) staleReasons.push('request aborted');
+    if (ctx.chatMetadata !== meta) staleReasons.push('chatMetadata object replaced');
+    if (epoch(meta) !== generationEpoch) staleReasons.push('adversary explicitly cleared');
+    if (ctx.chat !== source) staleReasons.push('chat array replaced');
+    if (owner(ctx) !== identity || cardSource(ctx) !== cardStamp) staleReasons.push('chat/card identity or data changed');
+    if (JSON.stringify(fingerprints(ctx)) !== JSON.stringify(prefix)) staleReasons.push('prose/swipe/source changed');
+    if (JSON.stringify([settings.enabled, settings.realm, settings.adversary, settings.llm]) !== mode) staleReasons.push('API/mode settings changed');
+    if (!liveContainer || JSON.stringify(liveContainer.facts) !== factStamp) staleReasons.push('facts ledger changed');
+    if (!liveContainer || JSON.stringify(liveContainer.adversary) !== ledgerStamp) staleReasons.push('adversary ledger changed');
+    if (staleReasons.length) return fail(`Stale response: ${staleReasons.join('; ')}`);
     if (!response.ok) return fail(response.error || 'Observation failed');
     let parsed;
     try { parsed = JSON.parse(response.text); } catch { return fail('Strict JSON required'); }
@@ -269,7 +281,7 @@ export async function observeAdversary(ctx, settings, { signal, targetIndex, sou
     next.snapshots.push({ prefix: prefix.slice(0, index + 1), state: stateOf(next) });
     // Bounded rollback window; edits older than retained exact prefixes reset safely.
     next.snapshots = next.snapshots.slice(-24);
-    container.adversary = next; // transactional commit only after all provenance checks
+    liveContainer.adversary = next; // commit to the current normalized slot after provenance checks
     const critical = next.plots.some(p => p.stage === 'critical');
     // Older envelopes did not distinguish public speech from private observation.
     // Accept their proposals for compatibility, but never publish their commentary.

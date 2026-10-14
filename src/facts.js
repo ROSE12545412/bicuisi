@@ -125,7 +125,21 @@ export async function observeFacts(ctx, settings, { signal, targetIndex, validat
             user: JSON.stringify({ outputSchema: schema.value, targetIndex: index, latestProse: chat[index].mes, recentMessages: recent, priorFacts: ledger.facts }),
             jsonSchema: schema, maxTokens: 3000, temperature: 0.1, signal });
     } catch (e) { return fail(String(e?.message ?? e)); }
-    if (!isCurrent() || signal?.aborted || ctx.chatMetadata !== meta || ctx.chat !== chat || epoch(meta) !== generationEpoch || meta[KEY] !== container || owner(ctx) !== identity || card(ctx) !== cardStamp || mode(settings) !== modeStamp || JSON.stringify(fingerprints(ctx)) !== JSON.stringify(prefix) || JSON.stringify(container.facts) !== ledgerStamp) return fail('Stale response: identity/mode/source/ledger changed');
+    const staleReasons = [];
+    if (!isCurrent()) staleReasons.push('controller lifecycle changed');
+    if (signal?.aborted) staleReasons.push('request aborted');
+    if (ctx.chatMetadata !== meta) staleReasons.push('chatMetadata object replaced');
+    if (ctx.chat !== chat) staleReasons.push('chat array replaced');
+    if (epoch(meta) !== generationEpoch) staleReasons.push('facts explicitly cleared');
+    if (owner(ctx) !== identity) staleReasons.push('chat/card identity changed');
+    if (card(ctx) !== cardStamp) staleReasons.push('character data changed');
+    if (mode(settings) !== modeStamp) staleReasons.push('API/mode settings changed');
+    if (JSON.stringify(fingerprints(ctx)) !== JSON.stringify(prefix)) staleReasons.push('prose/swipe/source changed');
+    // saveChatData replaces the plugin slot with a normalized copy. An identical
+    // facts ledger is not a new observation or clear; commit to the live slot.
+    const liveContainer = meta[KEY];
+    if (!liveContainer || JSON.stringify(liveContainer.facts) !== ledgerStamp) staleReasons.push('facts ledger changed');
+    if (staleReasons.length) return fail(`Stale response: ${staleReasons.join('; ')}`);
     if (!response.ok) return fail(response.error || 'Observation failed');
     let parsed;
     try { parsed = JSON.parse(response.text); } catch { return fail('Strict JSON required'); }
@@ -144,7 +158,7 @@ export async function observeFacts(ctx, settings, { signal, targetIndex, validat
     next.lastTargetIndex = index;
     next.snapshots.push({ prefix: prefix.slice(0, index + 1), state: state(next) });
     next.snapshots = next.snapshots.slice(-24);
-    container.facts = next;
+    liveContainer.facts = next;
     return { ok: true, ledger: clone(next) };
 }
 
