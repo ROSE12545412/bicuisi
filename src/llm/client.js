@@ -21,6 +21,8 @@
  */
 
 /** 用户主动中断时统一用这个字符串，方便上层区分「失败」与「被中止」。 */
+import { beginRequestReport, finishRequestReport, responseShape } from '../error-report.js';
+
 export const ABORT_MESSAGE = '已被用户中止';
 
 /** 判断异常是不是「被 abort 中断」。 */
@@ -442,6 +444,8 @@ export class LlmClient {
         const temperature = Number.isFinite(configuredTemperature) ? configuredTemperature : 1.0;
         const timeoutMs = Math.max(3000, Number(this.config.timeoutMs) || 45000);
         const meta = { mode: this.config.mode, maxTokens, temperature, attempts: 0 };
+        const report = beginRequestReport(this.label, this.config, { maxTokens, temperature, timeoutMs, schema: req.jsonSchema });
+        let reportStatus = 'failed';
 
         // 超时与外部取消汇入请求自己的 controller，绝不修改调用方 controller。
         // 即使宿主忽略 signal，也停止等待并拒绝迟到结果。
@@ -465,20 +469,26 @@ export class LlmClient {
             const dispatch = controller.signal.aborted ? cancelled : this._dispatch(messages, {
                 maxTokens, temperature, jsonSchema: req.jsonSchema, signal: controller.signal,
                 onAttempt: () => { meta.attempts++; },
-                onNotice: (notice) => { meta.notice = notice; this.lastNotice = notice; },
+                onNotice: (notice) => { meta.notice = notice; this.lastNotice = notice; report.compatibilityFallback = true; },
+                onResponse: info => { report.response = info; },
             });
             const text = await Promise.race([dispatch, cancelled]);
             if (!text || !text.trim()) {
                 return { ok: false, text: '', error: '模型返回了空内容', meta };
             }
+            reportStatus = 'success';
             return { ok: true, text, meta };
         } catch (e) {
+            reportStatus = timeoutError ? 'timeout' : (isAbortError(e) || signal?.aborted ? 'aborted' : 'failed');
+            const message = describeError(e);
+            report.failureCode = /为空|空内容|结构不认识/.test(message) ? 'empty_or_unknown_content' : /不是合法 JSON/.test(message) ? 'invalid_json' : /^HTTP \d+/.test(message) ? 'http_error' : reportStatus === 'failed' ? 'transport_error' : reportStatus;
             if (timeoutError) return { ok: false, text: '', error: timeoutError.message, meta };
             if (isAbortError(e) || signal?.aborted) {
                 return { ok: false, text: '', error: ABORT_MESSAGE, meta, aborted: true };
             }
             return { ok: false, text: '', error: describeError(e) || '请求失败（异常对象没有可读信息）', meta };
         } finally {
+            finishRequestReport(report, reportStatus, meta);
             clearTimeout(timer);
             signal?.removeEventListener('abort', forwardAbort);
             controller.signal.removeEventListener('abort', onAbort);
@@ -549,6 +559,7 @@ export class LlmClient {
             throw Object.assign(new Error(ABORT_MESSAGE), { name: 'AbortError' });
         }
         const text = extractContent(response);
+        opts.onResponse?.({ shape: responseShape(response), extractedChars: text.length });
         if (!text) throw new Error('连接配置返回内容为空（可能是该配置的模型不支持当前请求）');
         return text;
     }
@@ -645,7 +656,9 @@ export class LlmClient {
             }
             if (opts.signal?.aborted) throw Object.assign(new Error(ABORT_MESSAGE), { name: 'AbortError' });
             opts.onAttempt?.();
-            return fetch(url, { method: 'POST', headers, body: JSON.stringify(body), signal: opts.signal });
+            const response = await fetch(url, { method: 'POST', headers, body: JSON.stringify(body), signal: opts.signal });
+            opts.onResponse?.({ httpStatus: response.status, ok: response.ok, schemaSent: withJsonSchema && Boolean(opts.jsonSchema) });
+            return response;
         };
 
         /** 读错误详情（截断，避免把整个 HTML 错误页塞进日志）。 */
@@ -680,10 +693,12 @@ export class LlmClient {
         try {
             payload = await res.json();
         } catch (e) {
+            opts.onResponse?.({ httpStatus: res.status, ok: res.ok, json: false });
             throw new Error(`端点返回的不是合法 JSON：${describeError(e)}`);
         }
         const text = extractContent(payload);
-        if (!text) throw new Error('端点返回内容为空或结构不认识（请到控制台看原始响应）');
+        opts.onResponse?.({ httpStatus: res.status, ok: res.ok, json: true, shape: responseShape(payload), extractedChars: text.length });
+        if (!text) throw new Error('端点返回内容为空或结构不认识（请在诊断页复制错误报告）');
         return text;
     }
 }

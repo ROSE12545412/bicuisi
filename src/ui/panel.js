@@ -33,6 +33,7 @@ import {
     formatListInput,
     parseListInput,
 } from '../config.js';
+import { buildErrorReport } from '../error-report.js';
 import { LlmClient } from '../llm/client.js';
 import { isVoid, guideName, modeImageUrl } from '../mode.js';
 import {
@@ -2134,6 +2135,36 @@ function sectionPersona(/** @type {any} */ app, /** @type {any} */ s, /** @type 
 
 function sectionDiag(/** @type {any} */ app) {
     const out = el('div', { class: `${CSS_PREFIX}preview` });
+    // Separate from the optional story diagnosis: this report is always sanitized.
+    const reportOut = el('div', { class: `${CSS_PREFIX}preview`, 'aria-live': 'polite' });
+    const copyErrorReport = async () => {
+        let text;
+        try {
+            text = JSON.stringify(buildErrorReport(app), null, 2);
+            if (typeof text !== 'string') throw new Error('Invalid report');
+        } catch {
+            // Do not expose an exception here: it may itself contain private source text.
+            reportOut.replaceChildren?.(note('错误报告生成失败，请重试。', 'error'));
+            return;
+        }
+        const input = textarea({ value: text, rows: 16, ariaLabel: '错误报告（可选择并手动复制）', onChange: () => {} });
+        input.readOnly = true;
+        input.setAttribute?.('readonly', '');
+        const status = note('错误报告已生成；分享前可在下方检查内容。');
+        reportOut.replaceChildren?.(status, input);
+        try {
+            const clipboard = globalThis.navigator?.clipboard;
+            if (typeof clipboard?.writeText !== 'function') throw new Error('Clipboard unavailable');
+            await clipboard.writeText(text);
+            status.textContent = '错误报告已复制到剪贴板；下方保留可检查、可选择的完整报告。';
+            toast('错误报告已复制到剪贴板', 'success');
+        } catch {
+            status.textContent = '自动复制不可用或失败。请在下方文本框中全选并手动复制错误报告。';
+            input.focus?.();
+            input.select?.();
+            toast('请在下方文本框中手动复制错误报告', 'warning');
+        }
+    };
     let includeStory = false;
     const preview = () => show(pre(buildDiagnostics(app, { includeStory }), 400));
 
@@ -2161,6 +2192,7 @@ function sectionDiag(/** @type {any} */ app) {
                 },
                 { variant: 'primary' },
             ),
+            button('📋 复制错误报告', copyErrorReport),
             button('🧹 清空本聊天记忆', async () => {
                 await app.clearMemory();
                 toast('已清空本聊天的引导记忆', 'success');
@@ -2169,7 +2201,9 @@ function sectionDiag(/** @type {any} */ app) {
             button('查看当前状态', () => show(pre(JSON.stringify(redactDiagnostics(app.state(), app.settings), null, 2), 420))),
         ]),
         field({ label: '包含剧情与详细设置（可能剧透）', hint: '默认公开报告不含剧情、卡名、书名、状态及日志；勾选后请先检查预览。', control: checkbox({ checked: false, onChange: (v) => { includeStory = v; preview(); } }) }),
+        note('错误报告独立于剧情选项，仅包含脱敏后的运行状态与近期请求故障；生成后可在下方检查和手动复制。'),
         note('先预览再分享；脱敏不是对未知私密内容的保证。'),
+        reportOut,
         out,
     ];
 }
