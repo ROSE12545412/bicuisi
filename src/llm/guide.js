@@ -595,7 +595,16 @@ export async function locateHooks(ctx, settings, opts = {}) {
         return out;
     }
 
+    // 区分模型明确选择空数组与畸形/越界响应，后者不得降级为无素材。
+    let envelope;
+    try { envelope = lenientParse(response.text); } catch { envelope = null; }
+    const list = Array.isArray(envelope) ? envelope : envelope && (envelope.pick ?? envelope.picks ?? envelope.index ?? envelope.indices ?? envelope.selected);
+    if (!Array.isArray(list) || list.some(item => {
+        const n = Number(typeof item === 'object' && item !== null ? (item.index ?? item.no ?? item.id) : item);
+        return !Number.isInteger(n) || n < 1 || n > index.used.length;
+    })) { out.error = '剧情定位必须返回完整有效的条目编号数组'; return out; }
     const parsed = parseLocateResult(response.text, index.used.length);
+    out.noRelevantSources = list.length === 0;
     out.phase = parsed.phase;
     out.why = parsed.why;
     out.picks = parsed.picks.slice(0, maxPick);
@@ -685,13 +694,15 @@ export async function assessRetrievedSources(ctx, settings, sources, opts = {}) 
     if (!response.ok || opts.signal?.aborted) return fail(response.error || '适用性核查失败', response.meta ?? {});
     let parsed;
     try { parsed = JSON.parse(response.text); } catch { return fail('适用性核查必须返回完整严格 JSON', response.meta ?? {}); }
+    if (!parsed || !Array.isArray(parsed.sourceAssessment) || parsed.sourceAssessment.some(r => !r || typeof r !== 'object' || !['applicable', 'unknown', 'excluded'].includes(r.status)))
+        return fail('适用性核查必须返回有效 sourceAssessment 数组与状态', response.meta ?? {});
     const sourceAssessment = normalizeSourceAssessment(parsed?.sourceAssessment, canonical, supportingTexts);
     const approved = sources.filter((s) => !s.book || sourceAssessment.some((r) => r.book === s.book
         && String(r.uid) === String(s.uid) && r.status === 'applicable'));
     // With retrieved canon but no approved canon, suppress the entire round rather
     // than letting commentary or a user note launder rejected canonical details.
     const anyCanon = sourceAssessment.some((r) => r.status === 'applicable');
-    return { sources: anyCanon ? approved : [], sourceAssessment, meta: response.meta ?? {},
+    return { sources: anyCanon ? approved : [], sourceAssessment, noApplicableSources: !anyCanon, meta: response.meta ?? {},
         error: anyCanon ? '' : '原文触发条件未知、冲突或证据不支持；本轮引导与吐槽已关闭，可补足事实后重试' };
 }
 
@@ -703,7 +714,10 @@ export async function retrieveVerifiedSources(ctx, settings, opts = {}) {
     try {
         const located = await locateHooks(ctx, settings, { ...opts, hooks, factsText: formatFactsForPrompt(ctx) });
         out.located = located;
-        if (!located.ok) { out.error = located.error; return out; }
+        if (!located.ok) {
+            if (opts.allowNoApplicableSources && located.noRelevantSources) { out.note = '未选择相关原文；仅依据当前正文与确认事实观测'; return out; }
+            out.error = located.error; return out;
+        }
         const candidates = located.picked.map((h) => h.book
             ? { ...h, content: '', brief: '' } : { ...h, brief: '', sourceType: 'user-note' });
         const hydrated = await resolveHookContents(ctx, candidates, { maxChars: Number.MAX_SAFE_INTEGER, signal: opts.signal });
@@ -713,7 +727,9 @@ export async function retrieveVerifiedSources(ctx, settings, opts = {}) {
         const assessed = await assessRetrievedSources(ctx, settings, originals, opts);
         out.sources = assessed.sources;
         out.sourceAssessment = assessed.sourceAssessment;
-        out.error = assessed.error;
+        if (opts.allowNoApplicableSources && assessed.noApplicableSources) {
+            out.note = '原文未通过适用性核查，全部排除；仅依据当前正文与确认事实观测';
+        } else out.error = assessed.error;
     } catch (e) { out.error = describeError(e); }
     return out;
 }

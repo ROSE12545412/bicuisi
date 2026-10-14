@@ -442,6 +442,7 @@ export class GuideController {
             if (!pool.ok || !valid()) return fail(pool.error || '请求已作废');
             stage('剧情定位 / 原文适用性核查开始');
             retrieved = await retrieveVerifiedSources(ctx, this.settings, {
+                allowNoApplicableSources: true,
                 signal: abort?.signal,
                 hooks: (pool.hooks ?? []).filter(h => !isRuleBook(h.book)),
                 finishedText: String(ctx.chat?.[targetIndex]?.mes ?? ''),
@@ -452,6 +453,7 @@ export class GuideController {
             this.lastOutcome = { ok: !retrieved.error, adversary: true, sourceAssessment: this.lastSourceAssessment,
                 retrievedSources: this.lastRetrievedSources, error: retrieved.error ?? '', result: { guidance: '', commentary: '', emotion: 'calm' } };
             if (retrieved.error) return fail(retrieved.error);
+            if (retrieved.note) this.log(retrieved.note);
             if (retrieved.located) this.lastLocated = { ...retrieved.located, at: Date.now() };
             stage('三通道生成请求开始（引导 / 吐槽 / 私有计划）');
             observed = await observeAdversary(ctx, this.settings, { targetIndex, signal: abort?.signal, sources: retrieved.sources, validate: valid });

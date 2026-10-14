@@ -36,6 +36,8 @@ export function buildErrorReport(app) {
         adversaryEnabled: app.settings?.adversary?.enabled === true, inflight: Boolean(app.inflight),
         targetIndex: Number.isInteger(app.lastAdversaryStage?.targetIndex) ? app.lastAdversaryStage.targetIndex : null,
         failureCategory: /Stale response/.test(app.lastError ?? '') ? 'stale_guard' : /为空|空内容|结构不认识/.test(app.lastError ?? '') ? 'empty_or_unknown_response' : /JSON|envelope|schema/i.test(app.lastError ?? '') ? 'json_or_schema' : app.lastError ? 'other_failure' : null,
-        stage: /事实/.test(app.lastAdversaryStage?.stage ?? '') ? 'facts' : /定位/.test(app.lastAdversaryStage?.stage ?? '') ? 'locate' : /生成|观察/.test(app.lastAdversaryStage?.stage ?? '') ? 'compose' : 'see_recent_requests',
-        recentRequests: recent, note: recent.length ? '结构诊断：content 为 null、reasoningChars 大于零且 finishReason=length，可能是推理占满额度；不能将推理文本当答案。' : '尚无请求记录；请先复现错误，再复制报告。记录仅保存在当前页面内存中。' };
+        stage: ({ '共享事实观察': 'facts', '剧情定位': 'locate', '原文适用性核查': 'assess', '人神对抗观察': 'compose' })[recent.at(-1)?.label] ?? 'see_recent_requests',
+        recentRequests: recent, note: !recent.length ? '尚无请求记录；请先复现错误，再复制报告。记录仅保存在当前页面内存中。'
+            : recent.at(-1)?.response?.shape?.finishReason === 'length' ? '最近请求输出被截断；推理文本不能作为答案。'
+            : 'stage 表示最近一次 API 请求，不等同于语义校验通过。HTTP 成功后仍可能因格式或证据核查停止；请结合诊断页日志。' };
 }

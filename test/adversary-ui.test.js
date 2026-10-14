@@ -49,7 +49,7 @@ function makeApp() {
 }
 
 test('adversary defaults off and normalization rejects unsafe booleans', () => {
-    assert.equal(CODE_REVISION, 'r2026-10-12.33');
+    assert.equal(CODE_REVISION, 'r2026-10-12.34');
     assert.deepEqual(defaultSettings().adversary, { enabled: false, allowDeath: false, maxPlots: 3 });
     const s = defaultSettings();
     s.adversary = { enabled: 'true', allowDeath: 1, maxPlots: 99 };
