@@ -29,7 +29,7 @@
  *     都只是这一轮不出声，绝不能让酒馆报错或卡住用户聊天。
  */
 
-import { EXT_ID, EXT_NAME, TAG, deriveExtensionFolder } from './src/config.js';
+import { EXT_ID, EXT_NAME, TAG, CODE_REVISION, deriveExtensionFolder } from './src/config.js';
 import { getSettings, saveSettings } from './src/core/store.js';
 import { GuideController } from './src/app.js';
 import { createFloatingBeatrice } from './src/ui/floating.js';
@@ -339,9 +339,7 @@ function hookEvents(app, ctx) {
     listen('GENERATION_STARTED', () => app.onGenerationStart());
 
     // ── 正文结束 → 兑现结果并注入 ──────────────────────────────────────
-    listen('GENERATION_ENDED', () => {
-        app.onGenerationEnd();
-    });
+    listen('GENERATION_ENDED', () => app.onGenerationEnd());
 
     // 用户点了「停止生成」→ 取消在途请求（省额度，也避免半截结果突然冒出来）
     listen('GENERATION_STOPPED', () => app.onGenerationStopped());

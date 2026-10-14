@@ -323,7 +323,12 @@ export class GuideController {
         if (this.inflight) return this.inflight;
         const token = this.captureLifecycle();
         this.abort = token.abort;
-        const pending = Promise.resolve().then(() => work(token)).catch(e => this.staleOutcome(describeError(e)))
+        const pending = Promise.resolve().then(() => work(token)).catch(e => {
+            if (token.abort?.signal?.aborted || !this.lifecycleValid(token)) return this.staleOutcome(describeError(e));
+            this.lastError = describeError(e);
+            this.log(`处理异常：${this.lastError}`);
+            return { ok: false, error: this.lastError };
+        })
             .finally(() => {
                 if (this.inflight === pending) this.inflight = null;
                 if (this.abort === token.abort) this.abort = null;
@@ -405,23 +410,28 @@ export class GuideController {
         return saveChatData(this.ctx, getChatData(this.ctx));
     }
 
-    async runAdversaryTurn(targetIndex) {
+    async runAdversaryTurn(targetIndex, lifecycle) {
         if (!this.settings.enabled || !adversaryEnabled(this.settings)) return { ok: false, error: '人神对抗模式未开启' };
-        if (this._adversaryInFlight) return { ok: false, error: '正在观察正文，请稍后' };
-        const token = this.captureLifecycle();
+        if (this._adversaryInFlight && !this._adversaryInFlight.abort?.signal?.aborted) return { ok: false, error: '正在观察正文，请稍后' };
+        const token = lifecycle ?? this.captureLifecycle();
         const ctx = token.ctx;
         const origin = token.origin;
         const target = this.captureTarget(targetIndex, ctx);
         const valid = () => this.lifecycleValid(token, target) && adversaryEnabled(this.settings);
-        this._adversaryInFlight = true;
+        this._adversaryInFlight = token;
         this._guideRequests = (this._guideRequests ?? 0) + 1;
         const abort = token.abort;
         this.abort = abort;
+        const stage = (name) => { this.lastAdversaryStage = { stage: name, targetIndex, at: Date.now() }; this.log(`人神对抗 · ${name}（正文 #${targetIndex}）`); };
+        const fail = (error) => { this.lastError = error || '对抗处理失败'; stage(`停止：${this.lastError}`); return { ok: false, error: this.lastError, adversary: true }; };
         try {
+            stage('事实观测请求开始');
             const facts = await this.observeCurrentFacts(targetIndex, abort?.signal, token, target);
-            if (!facts.ok) return { ok: false, error: facts.error };
+            if (!facts.ok) return fail(facts.error);
+            stage(facts.duplicate ? '复用已有事实；核查线索池' : '事实观测完成；核查线索池');
             const pool = await this.verifiedCurrentHookPool(token);
-            if (!pool.ok || !valid()) return this.staleOutcome(pool.error);
+            if (!pool.ok || !valid()) return fail(pool.error || '请求已作废');
+            stage('剧情定位 / 原文适用性核查开始');
             const retrieved = await retrieveVerifiedSources(ctx, this.settings, {
                 signal: abort?.signal,
                 hooks: (pool.hooks ?? []).filter(h => !isRuleBook(h.book)),
@@ -432,9 +442,11 @@ export class GuideController {
             this.lastRetrievedSources = retrieved.retrievedSources ?? [];
             this.lastOutcome = { ok: !retrieved.error, adversary: true, sourceAssessment: this.lastSourceAssessment,
                 retrievedSources: this.lastRetrievedSources, error: retrieved.error ?? '', result: { guidance: '', commentary: '', emotion: 'calm' } };
-            if (retrieved.error) return { ok: false, error: retrieved.error };
+            if (retrieved.error) return fail(retrieved.error);
+            if (retrieved.located) this.lastLocated = { ...retrieved.located, at: Date.now() };
+            stage('三通道生成请求开始（引导 / 吐槽 / 私有计划）');
             const observed = await observeAdversary(ctx, this.settings, { targetIndex, signal: abort?.signal, sources: retrieved.sources, validate: valid });
-            if (!observed.ok) { this.lastError = observed.error ?? '对抗观测失败'; return observed; }
+            if (!observed.ok) return fail(observed.error ?? '对抗观测失败');
             if (!valid())
                 return { ok: false, error: '对抗结果已过期' };
             const saved = await this.saveLifecycleData(token, target, getChatData(ctx));
@@ -442,12 +454,18 @@ export class GuideController {
             if (!valid())
                 return { ok: false, error: '保存期间已切换，对抗气泡不再显示' };
             this.syncAdversaryDirector();
-            if (!observed.duplicate && observed.commentary) this.ui?.say?.(String(observed.commentary), { emotion: observed.emotion ?? 'calm' });
-            this.lastError = '';
-            return { ...observed, result: { guidance: '', commentary: observed.commentary ?? '', emotion: observed.emotion ?? 'calm' }, adversary: true, origin, realm: 'void' };
-        } catch (error) { return { ok: false, error: describeError(error) }; }
+            if (observed.duplicate) { stage('同一正文已处理；不重复投放'); return { ...observed, adversary: true }; }
+            const outcome = { ...observed, result: { guidance: observed.guidance ?? '', commentary: observed.commentary ?? '', emotion: observed.emotion ?? 'calm', hooks_used: [] },
+                adversary: true, publicChannels: true, origin, realm: 'void', lifecycle: token,
+                targetMessageId: targetIndex, targetSnapshot: target, turnIndex: this.currentTurnIndex(),
+                hooks: retrieved.sources, sourceAssessment: retrieved.sourceAssessment, located: retrieved.located };
+            const delivered = await this._install(outcome, '人神对抗正文结束');
+            if (!delivered.ok) return fail(delivered.error);
+            stage('完成：公开引导 / 吐槽已投放；计划仅私有保存');
+            return delivered;
+        } catch (error) { return fail(describeError(error)); }
         finally {
-            this._adversaryInFlight = false;
+            if (this._adversaryInFlight === token) this._adversaryInFlight = false;
             this._guideRequests = Math.max(0, (this._guideRequests ?? 1) - 1);
             if (this.abort === abort) this.abort = null;
         }
@@ -499,7 +517,7 @@ export class GuideController {
         const valid = () => this.lifecycleValid(token, target);
         if (!valid() || (Number.isInteger(outcome?.targetMessageId) && !target)) return this.staleOutcome();
         if (outcome?.installed) return outcome;
-        if (outcome?.adversary) return outcome;
+        if (outcome?.adversary && !outcome?.publicChannels) return outcome;
         if (outcome?.realm && outcome.realm !== (this.settings.realm ?? 'beatrice')) {
             return { ok: false, error: '模式已经切换，旧引导不再安装' };
         }
@@ -735,11 +753,16 @@ export class GuideController {
 
     /** 事件：主模型开始生成。 */
     onGenerationStart() {
+        this.refreshContext();
+        // Both host START events describe the same generation. Keep the first
+        // source snapshot even if AFTER_COMMANDS arrives after streaming begins.
+        if (this._generationActive) return;
+        this._generationActive = true;
+        this.cancelInflight();
+        this._generationBaseline = this.lastAiMessageIndex();
+        this._generationSource = this.captureTarget(this._generationBaseline);
         this.syncAdversaryDirector();
-        if (adversaryEnabled(this.settings)) {
-            this._generationBaseline = this.lastAiMessageIndex();
-            return;
-        }
+        if (adversaryEnabled(this.settings)) return;
         // 这一刻**只做一件事**：确保线索池可用（必要时触发一次 AI 通读）。
         //
         // 放在这里是因为此刻主模型刚开始写正文，用户不会觉得卡 ——
@@ -764,10 +787,6 @@ export class GuideController {
         // 代价是用户要等几秒，但那几秒有「正在观测…」状态条兜着，
         // 而且换来的是能真正接上剧情的引导 —— 这个取舍是值得的。
 
-        // 记录生成开始前聊天里最后一条的下标。正文写完时靠它判断
-        // 「新的那条进来了没有」—— 见 waitForFreshAiMessage。
-        this._generationBaseline = this.lastAiMessageIndex();
-
         this.ensureHookPool({ silent: true }).catch(() => {});
     }
 
@@ -784,13 +803,20 @@ export class GuideController {
      *   4. 两个去处分别落地：`commentary` → 气泡，`guidance` → 接在正文末尾
      */
     async onGenerationEnd() {
+        this._generationActive = false;
+        const generationEpoch = this._requestEpoch ?? 0;
         this.ui?.setTyping?.('正在观测…');
         try {
-            await this.runPostGeneration();
+            this.log('收到正文生成结束事件；准备观测');
+            const outcome = await this.runPostGeneration();
+            if (!outcome?.ok && !outcome?.aborted && !outcome?.stale) {
+                this.lastError = outcome?.error || '未触发引导';
+                this.log(`正文结束处理未完成：${this.lastError}`);
+            }
         } catch (e) {
             this.log(`生成引导时出错：${describeError(e)}`);
         } finally {
-            this.ui?.setTyping?.(false);
+            if (generationEpoch === (this._requestEpoch ?? 0)) this.ui?.setTyping?.(false);
         }
     }
 
@@ -800,18 +826,15 @@ export class GuideController {
      * @returns {Promise<{ok: boolean, error?: string}>}
      */
     runPostGeneration() {
+        const baseline = Number.isFinite(Number(this._generationBaseline))
+            ? Number(this._generationBaseline) : this.lastAiMessageIndex() - 1;
+        const source = this._generationSource ?? null;
         return this._singleFlight(async token => {
-            const baseline = Number.isFinite(Number(this._generationBaseline))
-                ? Number(this._generationBaseline) : this.lastAiMessageIndex() - 1;
-            let targetIdx = await this.waitForFreshAiMessage(baseline, 3000, token);
+            const targetIdx = await this.waitForFreshAiMessage(baseline, 3000, token, source);
             if (!this.lifecycleValid(token)) return this.staleOutcome();
-            if (targetIdx < 0) {
-                const byTurn = this.messageIndexOfTurn(this.currentTurnIndex());
-                if (byTurn !== null && byTurn >= baseline && String(token.chat?.[byTurn]?.mes ?? '').trim()) targetIdx = byTurn;
-            }
             if (targetIdx < 0) return { ok: false, error: '等不到刚生成的正文，这次不出声' };
             const target = this.captureTarget(targetIdx, token.ctx);
-            if (adversaryEnabled(token.settings)) return this.runAdversaryTurn(targetIdx);
+            if (adversaryEnabled(token.settings)) return this.runAdversaryTurn(targetIdx, token);
             const turnIndex = this.currentTurnIndex();
             const verdict = this.shouldGuide(turnIndex);
             if (!verdict.go) return { ok: false, error: verdict.reason };
@@ -836,6 +859,7 @@ export class GuideController {
 
     /** 事件：生成被用户停止。 */
     onGenerationStopped() {
+        this._generationActive = false;
         this.cancelInflight();
     }
 
@@ -856,6 +880,9 @@ export class GuideController {
     onChatChanged() {
         this.refreshContext();
         this.cancelInflight();
+        this._generationActive = false;
+        this._generationBaseline = undefined;
+        this._generationSource = null;
         setDirectorPrompt(this.ctx, '');
         this.syncAdversaryDirector();
         this.hookCache = null;
@@ -964,7 +991,7 @@ export class GuideController {
      * @param {number} [timeoutMs]
      * @returns {Promise<number>} 新正文的下标；等不到返回 -1
      */
-    async waitForFreshAiMessage(beforeIndex, timeoutMs = 3000, token = null) {
+    async waitForFreshAiMessage(beforeIndex, timeoutMs = 3000, token = null, source = this._generationSource) {
         const step = 150;
         const deadline = Date.now() + Math.max(0, timeoutMs);
 
@@ -972,9 +999,13 @@ export class GuideController {
             if (token && !this.lifecycleValid(token)) return -1;
             const idx = this.lastAiMessageIndex();
             if (idx > beforeIndex && idx >= 0) return idx;
-            // 已经有一条新的 AI 消息出现了，但下标没变大（例如清空过聊天）
-            // —— 只要它比 beforeIndex 新就接受
-            if (idx >= 0 && idx > beforeIndex) return idx;
+            // Regeneration/swipe can replace the source at the same floor.
+            // An unchanged old body is never evidence of a completed generation.
+            if (idx >= 0 && idx === beforeIndex && source?.id === idx) {
+                const current = this.captureTarget(idx);
+                if (current && (current.message !== source.message ||
+                    current.mes !== source.mes || current.swipe !== source.swipe)) return idx;
+            }
             if (Date.now() >= deadline) return -1;
             await new Promise((r) => setTimeout(r, step));
         }
@@ -1779,6 +1810,9 @@ export class GuideController {
             pendingAppends: pendingAppendCount(),
             inflight: Boolean(this.inflight),
             lastError: this.lastError,
+            realm: this.settings.realm ?? 'beatrice',
+            adversaryEnabled: adversaryEnabled(this.settings),
+            adversaryStage: this.lastAdversaryStage ?? null,
 
             // ── 线索池现状（**持久化的**，跟聊天走）────────────────────────
             //

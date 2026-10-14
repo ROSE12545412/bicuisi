@@ -7,7 +7,7 @@ import { resolvePersonaPrompts, defaultPersonaPrompts, buildPersonaMessages, bui
 describe('Reversible void realm', () => {
     test('defaults, unknown values and legacy settings normalize safely', () => {
         assert.equal(defaultSettings().realm, 'beatrice');
-        assert.equal(CODE_REVISION, 'r2026-10-12.24');
+        assert.equal(CODE_REVISION, 'r2026-10-12.25');
         for (const realm of [undefined, null, 'unknown', false]) {
             assert.equal(normalizeSettings(deepDefaults({ realm }, defaultSettings())).realm, 'beatrice');
         }

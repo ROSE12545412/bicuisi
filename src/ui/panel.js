@@ -935,7 +935,9 @@ function sectionAdversary(app, s, rerender, recap) {
     const status = app.adversaryDirectorStatus?.();
     const recapHost = el('div', { class: `${CSS_PREFIX}adversary-recap` });
     host.appendChild(el('h4', { text: '可选的人神对抗模式' }));
-    host.appendChild(note('仅在无之空间生效。默认关闭，不改变既有普通引导，也不覆盖你的自定义人设或辅助 API。'));
+    host.appendChild(note('仅在无之空间生效。默认关闭，不改变碧翠丝。人神公开引导接入正文、吐槽进入气泡、计划私有保存。真话建立信任，误导诱入剧情圈套；被识破可以辩解，但不得篡改既定事实或替用户行动。'));
+    const stage = app.state?.().adversaryStage;
+    host.appendChild(note(stage ? `最近处理阶段：${stage.stage} · 正文 #${stage.targetIndex}` : '尚未记录对抗请求阶段；生成正文后查看诊断日志，或长按头像重新观测。'));
     host.appendChild(note('开启前必须先导入「人神对抗规则」世界书，并挂载到当前角色卡或聊天；条目保持启用与常驻。只在插件里勾选世界书供辅助 API 读取，不等于挂载给正文模型。插件不自动挂载，也不自动验证是否挂载成功。退出对抗后建议取消挂载。', 'warn'));
     host.appendChild(field({
         label: '启用人神对抗模式',
