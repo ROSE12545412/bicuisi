@@ -700,10 +700,13 @@ export class LlmClient {
         }
         const text = extractContent(payload);
         opts.onResponse?.({ httpStatus: res.status, ok: res.ok, json: true, shape: responseShape(payload), extractedChars: text.length });
+        const shape = responseShape(payload);
+        if (shape.finishReason === 'length' && text) {
+            throw new Error(`${this.label || 'API 请求'}输出被截断（实际输出预算 ${opts.maxTokens} token，finish_reason=length）；返回内容不完整，已停止后续处理。请提高该阶段 API 预设的输出预算或结构化请求输出预算；不会自动重试，也不会把推理文本当答案。`);
+        }
         if (!text) {
-            const shape = responseShape(payload);
             if (shape.finishReason === 'length' && (shape.reasoningChars > 0 || shape.usage.reasoning > 0)) {
-                throw new Error(`推理耗尽输出预算（${opts.maxTokens} token），最终答案为空；请提高 API 页结构化请求输出预算或换非推理模型。不会自动重试。`);
+                throw new Error(`${this.label || 'API 请求'}：推理耗尽输出预算（${opts.maxTokens} token），最终答案为空；请提高该阶段 API 预设的输出预算或结构化请求输出预算。不会自动重试。`);
             }
             throw new Error('端点返回内容为空或结构不认识（请在诊断页复制错误报告）');
         }

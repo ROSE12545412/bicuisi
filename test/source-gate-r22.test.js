@@ -43,7 +43,8 @@ describe('r22 source applicability is an enforced pre-composition gate', () => {
         await mocked([locate, assessment([row()]), compose], async (calls) => {
             const out = await runGuide(context(), defaultSettings(), { hooks, finishedText });
             assert.equal(out.ok, true); assert.equal(calls.length, 3);
-            assert.equal(calls[1].maxTokens, 3000); assert.equal(calls[1].temperature, 0.1);
+            assert.equal(calls[1].maxTokens, undefined); // budget comes from selected client config
+            assert.equal(calls[1].temperature, 0.1);
             const prompt = JSON.stringify(calls[2].messages);
             assert.ok(prompt.includes(original)); assert.ok(!prompt.includes('SUMMARY_SECRET')); assert.ok(!prompt.includes('STALE_SECRET'));
             assert.equal(out.sourceAssessment[0].status, 'applicable');

@@ -578,13 +578,15 @@ export async function locateHooks(ctx, settings, opts = {}) {
     out.chars = index.chars;
 
     const maxPick = Math.max(1, Number(settings?.guidance?.locateMaxPick) || 4);
-    const client = new LlmClient(ctx, resolveStageLlm(settings, 'locate'), '剧情定位');
+    const config = resolveStageLlm(settings, 'locate');
+    const client = new LlmClient(ctx, config, '剧情定位');
     const response = await client.complete({
         system: `${buildLocateSystemPrompt(maxPick)}\n\n【中立事实记录】\n${opts.factsText || formatFactsForPrompt(ctx)}`,
         user: buildLocateUserPrompt({ ...opts, factsText: opts.factsText || formatFactsForPrompt(ctx) }, index.text),
         // 定位是检索任务，不是创作任务 —— 温度压低，免得它「发挥」
         temperature: 0.2,
-        maxTokens: 1200,
+        // JSON 定位未用 schema，但同样需要为推理和完整答案预留预算。
+        maxTokens: Math.max(Number(config.maxTokens) || 400, Number(config.structuredMaxTokens) || 0),
         signal: opts.signal,
     });
     out.meta = response.meta ?? {};
@@ -676,7 +678,8 @@ export async function assessRetrievedSources(ctx, settings, sources, opts = {}) 
                 confirmedEvidence: confirmed, completedAiProse: prose, factsText: formatFactsForPrompt(ctx) }),
             jsonSchema: { name: 'source_applicability', strict: true, value: { type: 'object', additionalProperties: false,
                 required: ['sourceAssessment'], properties: { sourceAssessment: buildOutputSchema(settings).value.properties.sourceAssessment } } },
-            maxTokens: 3000, temperature: 0.1, signal: opts.signal,
+            // 客户端沿用阶段预设的 maxTokens/structuredMaxTokens，不用固定值覆盖。
+            temperature: 0.1, signal: opts.signal,
         });
     } catch (e) { return fail(describeError(e)); }
     if (!response.ok || opts.signal?.aborted) return fail(response.error || '适用性核查失败', response.meta ?? {});
