@@ -33,6 +33,7 @@ import {
     formatListInput,
     parseListInput,
 } from '../config.js';
+import { API_STAGES, saveApiPreset, loadApiPreset, deleteApiPreset } from '../api-presets.js';
 import { buildErrorReport } from '../error-report.js';
 import { LlmClient } from '../llm/client.js';
 import { isVoid, guideName, modeImageUrl } from '../mode.js';
@@ -244,6 +245,94 @@ export function buildConfigSections(app, rerender, recap = { spoilers: false, cl
 // ---------------------------------------------------------------------------
 // 区块 1：辅助 API（用户最关心的一块，所以放第一个）
 // ---------------------------------------------------------------------------
+
+/** Preset drafts stay in window-local state, never in the persisted settings. */
+function sectionApiPresets(app, s, commit, view, cancelProbe) {
+    const feedback = el('div', { role: 'status', 'aria-live': 'polite' });
+    const presets = Array.isArray(s.apiPresets) ? s.apiPresets : [];
+    const options = (id, label) => {
+        const result = [{ value: '', label }, ...presets.map(p => ({ value: p.id, label: p.name }))];
+        if (id && !presets.some(p => p.id === id)) result.push({ value: id, label: `⚠️ 预设已不存在（${id}），请重新选择` });
+        return result;
+    };
+    const busy = () => typeof app.isBusy === 'function' ? app.isBusy()
+        : Boolean(app.inflight || app.abort || app._poolBuilding || app.state?.()?.inflight);
+    const canEdit = () => {
+        if (!busy()) return true;
+        feedback.replaceChildren?.(note('正在观测或读取世界书，请等待当前请求结束后再修改 API 预设或阶段分配。', 'warn'));
+        return false;
+    };
+    const guarded = node => { if (node) node.disabled = Boolean(busy()); return node; };
+    const finish = (result, label) => {
+        if (!result.ok) { feedback.replaceChildren?.(note(result.error || '预设操作失败。', 'error')); return false; }
+        view.apiPresetDelete = null;
+        commit(label);
+        return true;
+    };
+    const name = textInput({ value: view.apiPresetName ?? '', placeholder: '给当前 API 配置起个名字', width: '100%',
+        onInput: v => { view.apiPresetName = v; }, onChange: v => { view.apiPresetName = v; } });
+    const picker = select({ value: view.apiPresetId ?? '', options: options(view.apiPresetId, '（选择已保存的预设）'), width: '100%',
+        onChange: v => {
+            view.apiPresetId = v;
+            view.apiPresetName = presets.find(p => p.id === v)?.name ?? '';
+            view.apiPresetDelete = null;
+            if (name) name.value = view.apiPresetName;
+            feedback.replaceChildren?.(); // Selection alone does not load or save.
+        } });
+    const save = id => {
+        if (!canEdit()) return;
+        if (id === undefined) { feedback.replaceChildren?.(note('请先选择要更新的预设。', 'warn')); return; }
+        const result = saveApiPreset(s, name?.value ?? view.apiPresetName ?? '', id);
+        if (result.ok) { view.apiPresetId = result.preset.id; view.apiPresetName = result.preset.name; }
+        finish(result, id ? '更新 API 预设' : '新建 API 预设');
+    };
+    const body = [el('hr', { class: `${CSS_PREFIX}sep` }), el('h4', { text: 'API 预设与四阶段分配' }),
+        note('上面的字段是当前 API 设置。预设保存通道、地址、Key、模型与请求参数；选择预设后需明确点击加载。四个阶段可独立选择预设，选择「当前 API 设置」则沿用上面的配置。'),
+        note('API Key 与现有设置一样保存在本地设置中，为明文而非加密保险箱；不要公开分享设置文件。预设凭据不会导出到公开诊断报告。', 'warn'),
+        field({ label: '预设名称', control: guarded(name), wide: true }),
+        field({ label: '已保存的 API 预设', control: picker, wide: true }),
+        el('div', { class: `${CSS_PREFIX}btn-row` }, [
+            guarded(button('保存为新预设', () => save(''), { variant: 'primary' })),
+            guarded(button('加载所选预设', () => {
+                if (!canEdit()) return;
+                const result = loadApiPreset(s, view.apiPresetId ?? '');
+                if (result.ok) cancelProbe();
+                finish(result, '加载 API 预设');
+            })),
+            guarded(button('用当前设置更新所选预设', () => save(view.apiPresetId || undefined))),
+            guarded(button('删除所选预设', () => {
+                if (!canEdit()) return;
+                const preset = presets.find(p => p.id === view.apiPresetId);
+                if (!preset) { feedback.replaceChildren?.(note('请先选择一个存在的预设。', 'warn')); return; }
+                if (view.apiPresetDelete !== preset.id) {
+                    view.apiPresetDelete = preset.id;
+                    feedback.replaceChildren?.(note(`确认删除「${preset.name}」？此操作不能撤销，使用它的阶段将改回当前 API 设置。再次点击「删除所选预设」确认。`, 'warn'),
+                        button('取消删除预设', () => { view.apiPresetDelete = null; feedback.replaceChildren?.(); }));
+                    return;
+                }
+                const result = deleteApiPreset(s, preset.id);
+                if (result.ok) { view.apiPresetId = ''; view.apiPresetName = ''; }
+                finish(result, '删除 API 预设');
+            })),
+        ]), feedback];
+    for (const stage of API_STAGES) {
+        let route;
+        route = select({ value: s.apiRoutes?.[stage.id] ?? '', options: options(s.apiRoutes?.[stage.id], '当前 API 设置'), width: '100%',
+            onChange: v => {
+                if (!canEdit()) { route.value = s.apiRoutes?.[stage.id] ?? ''; return; }
+                if (v && !presets.some(p => p.id === v)) {
+                    route.value = s.apiRoutes?.[stage.id] ?? '';
+                    feedback.replaceChildren?.(note('预设不存在，请选择当前 API 设置或已有预设。', 'warn'));
+                    return;
+                }
+                s.apiRoutes = { ...(s.apiRoutes ?? {}), [stage.id]: v };
+                view.apiPresetDelete = null;
+                commit(`API 阶段分配：${stage.label}`);
+            } });
+        body.push(field({ label: `${stage.label} API`, control: guarded(route), wide: true }));
+    }
+    return body;
+}
 
 function sectionLlm(/** @type {any} */ app, /** @type {any} */ s, /** @type {Function} */ commit, /** @type {Function} */ rerender, lifecycle) {
     let request = 0;
@@ -559,6 +648,8 @@ function sectionLlm(/** @type {any} */ app, /** @type {any} */ s, /** @type {Fun
             }),
         }),
     );
+
+    body.push(...sectionApiPresets(app, s, commit, lifecycle, () => { ++request; lifecycle.cancel?.(); }));
 
     // 现场测试：连接 + 出话格式，一次验完
     const testOut = el('div', { class: `${CSS_PREFIX}preview` });

@@ -16,6 +16,7 @@
  */
 
 import { EMOTIONS } from '../config.js';
+import { resolveStageLlm } from '../api-presets.js';
 import { isRuleBook } from '../realm-worldbook.js';
 import { formatFactsForPrompt, getFactState, uncertainContext } from '../facts.js';
 import { getMemoryPrompt } from '../memories.js';
@@ -577,7 +578,7 @@ export async function locateHooks(ctx, settings, opts = {}) {
     out.chars = index.chars;
 
     const maxPick = Math.max(1, Number(settings?.guidance?.locateMaxPick) || 4);
-    const client = new LlmClient(ctx, settings?.llm);
+    const client = new LlmClient(ctx, resolveStageLlm(settings, 'locate'), '剧情定位');
     const response = await client.complete({
         system: `${buildLocateSystemPrompt(maxPick)}\n\n【中立事实记录】\n${opts.factsText || formatFactsForPrompt(ctx)}`,
         user: buildLocateUserPrompt({ ...opts, factsText: opts.factsText || formatFactsForPrompt(ctx) }, index.text),
@@ -669,7 +670,7 @@ export async function assessRetrievedSources(ctx, settings, sources, opts = {}) 
     if (opts.signal?.aborted) return fail('已被用户中止');
     let response;
     try {
-        response = await new LlmClient(ctx, settings?.llm).complete({
+        response = await new LlmClient(ctx, resolveStageLlm(settings, 'assess'), '原文适用性核查').complete({
             system: buildSourceAssessmentPrompt(),
             user: JSON.stringify({ sources: canonical.map((s) => ({ book: s.book, uid: s.uid, content: s.content })),
                 confirmedEvidence: confirmed, completedAiProse: prose, factsText: formatFactsForPrompt(ctx) }),
@@ -870,7 +871,7 @@ export async function runGuide(ctx, settings, opts = {}) {
     // 这是刻意的：两件事共享同一份「当前局势」理解（同样的世界书线索、
     // 同样的最近对话），拆成两次请求等于把同样的上下文发两遍、付两次钱，
     // 而且两次判断还可能互相矛盾（比如一次觉得该往东、一次吐槽他往东）。
-    const client = new LlmClient(ctx, settings.llm);
+    const client = new LlmClient(ctx, resolveStageLlm(settings, 'compose'), '剧情引导');
     const response = await client.complete({
         messages: buildPersonaMessages(settings, `${buildUserPrompt(ctxData, settings)}${settings.realm === 'void' ? '' : getMemoryPrompt(ctx)}\n\n【预核查已完成】本次提供的世界书原文已通过独立中立核查；未通过者完全不可用。sourceAssessment 返回 []，不要重复核查长文或创造新的证据。若发现明确冲突，可报告 unknown/excluded，程序将关闭本轮台词。`, factsText),
         jsonSchema: buildOutputSchema(settings),

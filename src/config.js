@@ -10,6 +10,8 @@
  *    而且补全要**就地写回**，否则界面渲染的默认值和实际生效值会对不上。
  */
 
+import { normalizeApiPresets } from './api-presets.js';
+
 /** 扩展 ID，用作 extensionSettings / chatMetadata 的键。 */
 export const EXT_ID = 'beatrice-guide';
 
@@ -29,7 +31,7 @@ export const EXT_ID = 'beatrice-guide';
  * 所以单独加这个号：`诊断页`、`/bg-status`、`/bg-test` 都会显示它。
  * 判断"更新生效了吗"只需要对比这一个字符串。
  */
-export const CODE_REVISION = 'r2026-10-12.30';
+export const CODE_REVISION = 'r2026-10-12.31';
 
 export const EXT_NAME = '碧翠丝的禁书库';
 
@@ -261,6 +263,9 @@ export function defaultSettings() {
             timeoutMs: 45000,
         },
 
+        apiPresets: [],
+        apiRoutes: { facts: '', locate: '', assess: '', compose: '' },
+
         injection: {
             /**
              * 引导怎么呈现：
@@ -461,6 +466,7 @@ export function normalizeSettings(settings) {
     s.persona.prompts = normalizePersonaPrompts(s.persona.prompts);
     s.persona.promptsVersion = clampInt(s.persona.promptsVersion, 0, 999, 0);
 
+    normalizeApiPresets(s);
     return s;
 }
 

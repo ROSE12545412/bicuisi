@@ -19,7 +19,7 @@ export function responseShape(payload) {
     };
 }
 export function beginRequestReport(label, config, options) {
-    const record = { id: ++sequence, at: new Date().toISOString(), label: ['剧情引导','事实观测','共享事实观察','人神对抗观察'].includes(label) ? label : '辅助请求', mode: ['custom','profile','main','tavern-helper'].includes(config?.mode) ? config.mode : 'other', maxTokens: options.maxTokens, temperature: options.temperature, timeoutMs: options.timeoutMs, schema: Boolean(options.schema), attempts: 0, status: 'pending' };
+    const record = { id: ++sequence, at: new Date().toISOString(), label: ['剧情引导','事实观测','共享事实观察','人神对抗观察','剧情定位','原文适用性核查'].includes(label) ? label : '辅助请求', mode: ['custom','profile','main','tavern-helper'].includes(config?.mode) ? config.mode : 'other', maxTokens: options.maxTokens, temperature: options.temperature, timeoutMs: options.timeoutMs, schema: Boolean(options.schema), attempts: 0, status: 'pending' };
     requests.push(record); if (requests.length > 12) requests.shift();
     return record;
 }

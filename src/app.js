@@ -27,6 +27,7 @@
  */
 
 import { CODE_REVISION, TAG } from './config.js';
+import { apiRoutingStamp } from './api-presets.js';
 import { isVoid } from './mode.js';
 import { adversaryEnabled, reconcileLedger, getAdversaryState, clearAdversaryState, observeAdversary, buildAdversaryDirective } from './adversary.js';
 import { directorStatus, setDirectorPrompt } from './adversary-director.js';
@@ -275,7 +276,7 @@ export class GuideController {
     captureLifecycle() {
         const ctx = this.refreshContext();
         return { ctx, chat: ctx?.chat, metadata: ctx?.chatMetadata, origin: identitySnapshot(ctx),
-            settings: this.settings, realm: this.settings.realm ?? 'beatrice', epoch: this._requestEpoch ?? 0,
+            settings: this.settings, apiStamp: apiRoutingStamp(this.settings), realm: this.settings.realm ?? 'beatrice', epoch: this._requestEpoch ?? 0,
             abort: typeof AbortController === 'function' ? new AbortController() : null };
     }
 
@@ -292,7 +293,8 @@ export class GuideController {
         if (!token || token.epoch !== (this._requestEpoch ?? 0) || token.abort?.signal.aborted ||
             token.chat !== live?.chat || token.metadata !== live?.chatMetadata ||
             token.origin.card !== now.card || token.origin.chat !== now.chat ||
-            token.realm !== (this.settings.realm ?? 'beatrice')) return false;
+            token.realm !== (this.settings.realm ?? 'beatrice') ||
+            token.apiStamp !== apiRoutingStamp(this.settings)) return false;
         if (!target) return true;
         const current = this.captureTarget(target.id, live);
         return Boolean(current && current.message === target.message && current.mes === target.mes && current.swipe === target.swipe);

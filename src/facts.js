@@ -6,6 +6,7 @@
 import { LlmClient } from './llm/client.js';
 import { characterKey } from './core/store.js';
 import { characterSourceStamp } from './card-source.js';
+import { resolveStageLlm, apiRoutingStamp } from './api-presets.js';
 import { isInjectedMessage } from './context.js';
 
 const KEY = 'beatrice-guide';
@@ -23,7 +24,7 @@ const blank = () => ({ facts: [], audit: [], lastTargetIndex: -1 });
 const fresh = ctx => ({ version: 1, owner: owner(ctx), ...blank(), snapshots: [] });
 const state = ledger => ({ facts: clone(ledger.facts), audit: clone(ledger.audit), lastTargetIndex: ledger.lastTargetIndex });
 const eligible = m => m && !m.is_system && !isInjectedMessage(m) && typeof m.mes === 'string' && m.mes.trim();
-const mode = settings => JSON.stringify([settings?.enabled, settings?.realm, settings?.llm, settings?.facts?.enabled]);
+const mode = settings => JSON.stringify([settings?.enabled, settings?.realm, apiRoutingStamp(settings), settings?.facts?.enabled]);
 const fields = ['id', 'actor', 'action', 'result', 'status', 'knowledge', 'evidence'];
 const exactKeys = (o, keys) => o && typeof o === 'object' && !Array.isArray(o) && Object.keys(o).length === keys.length && keys.every(k => Object.hasOwn(o, k));
 const boundedText = (s, max) => typeof s === 'string' && s.trim().length > 0 && s.length <= max && !/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/.test(s);
@@ -122,7 +123,7 @@ export async function observeFacts(ctx, settings, { signal, targetIndex, validat
     const recent = chat.map((m, i) => ({ index: i, role: m?.is_user ? 'user-attempt' : 'ai', mes: m?.mes ?? '' })).filter(m => m.index <= index && eligible(chat[m.index])).slice(-10);
     let response;
     try {
-        response = await new LlmClient(ctx, settings?.llm, '共享事实观察').complete({ system: SYSTEM,
+        response = await new LlmClient(ctx, resolveStageLlm(settings, 'facts'), '共享事实观察').complete({ system: SYSTEM,
             user: JSON.stringify({ outputSchema: schema.value, targetIndex: index, latestProse: chat[index].mes, recentMessages: recent, priorFacts: ledger.facts }),
             jsonSchema: schema, maxTokens: 3000, temperature: 0.1, signal });
     } catch (e) { return fail(String(e?.message ?? e)); }
