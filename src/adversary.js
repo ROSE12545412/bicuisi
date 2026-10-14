@@ -26,9 +26,16 @@ const fingerprints = ctx => (Array.isArray(ctx?.chat) ? ctx.chat : []).map(m => 
     m?.name ?? '', Boolean(isInjectedMessage(m)),
 ]));
 const prefixMatches = (prefix, current) => prefix.length <= current.length && prefix.every((v, i) => v === current[i]);
-const blankState = () => ({ plots: [], audit: [], lastTargetIndex: -1 });
+const CACHE_LIMIT = 24;
+// Completed public output only. Never retain model proposals or transport metadata.
+const publicCacheOf = state => (Array.isArray(state?.publicCache) ? state.publicCache : []).slice(-CACHE_LIMIT)
+    .filter(c => c && c.version === 1 && Number.isInteger(c.targetIndex) && c.targetIndex >= 0 && c.targetIndex <= state.lastTargetIndex &&
+        typeof c.guidance === 'string' && c.guidance.length <= 400 && typeof c.commentary === 'string' && c.commentary.length <= 400 &&
+        !/[\u0000-\u001f]/.test(c.guidance + c.commentary) && EMOTIONS.includes(c.emotion))
+    .map(c => ({ version: 1, targetIndex: c.targetIndex, guidance: c.guidance, commentary: c.commentary, emotion: c.emotion }));
+const blankState = () => ({ plots: [], audit: [], lastTargetIndex: -1, publicCache: [] });
 const fresh = ctx => ({ version: 1, owner: owner(ctx), ...blankState(), snapshots: [] });
-const stateOf = ledger => ({ plots: clone(ledger.plots), audit: clone(ledger.audit), lastTargetIndex: ledger.lastTargetIndex });
+const stateOf = ledger => ({ plots: clone(ledger.plots), audit: clone(ledger.audit), lastTargetIndex: ledger.lastTargetIndex, publicCache: publicCacheOf(ledger) });
 const slot = ctx => {
     if (!ctx?.chatMetadata || typeof ctx.chatMetadata !== 'object') throw new Error('Missing chatMetadata');
     if (!ctx.chatMetadata[KEY] || typeof ctx.chatMetadata[KEY] !== 'object') ctx.chatMetadata[KEY] = {};
@@ -62,8 +69,15 @@ export function reconcileLedger(ctx) {
             h.causes.every(c => c.evidence.length > 0 && c.evidence.every(e => e.index < h.index && eligible(ctx.chat?.[e.index]) && !ctx.chat[e.index].is_user && ctx.chat[e.index].mes.includes(e.quote))) &&
             h.opportunities.every(e => e.index < h.index && eligible(ctx.chat?.[e.index]) && ctx.chat[e.index].is_user && ctx.chat[e.index].mes.includes(e.quote)));
     };
+    // Cache entries are meaningful only inside the retained exact-prefix window.
+    // Malformed imports lose public output, not the successful processed marker.
+    const cachedTargets = new Set(ledger.snapshots.filter(s => s.prefix.length === s.state.lastTargetIndex + 1).map(s => s.state.lastTargetIndex));
+    ledger.publicCache = publicCacheOf(ledger).filter(c => cachedTargets.has(c.targetIndex));
     ledger.plots.forEach(cleanHistory);
-    ledger.snapshots.forEach(s => s.state.plots.forEach(cleanHistory));
+    ledger.snapshots.forEach(s => {
+        s.state.publicCache = publicCacheOf(s.state).filter(c => cachedTargets.has(c.targetIndex));
+        s.state.plots.forEach(cleanHistory);
+    });
     store.adversary = ledger;
     return clone(ledger);
 }
@@ -248,7 +262,12 @@ export async function observeAdversary(ctx, settings, { signal, targetIndex, sou
     const chat = ctx.chat ?? [];
     const index = targetIndex ?? chat.findLastIndex(m => eligible(m) && !m.is_user);
     if (!eligible(chat[index]) || chat[index].is_user) return fail('No new completed prose');
-    if (index <= ledger.lastTargetIndex) return fail('No new completed prose', true);
+    if (index <= ledger.lastTargetIndex) {
+        const cached = ledger.publicCache.findLast(c => c.targetIndex === index);
+        return { ok: true, duplicate: true, publicCacheAvailable: Boolean(cached),
+            guidance: cached?.guidance ?? '', commentary: cached?.commentary ?? '', emotion: cached?.emotion ?? 'calm',
+            ledger: clone(ledger), meta: responseMeta };
+    }
     const container = slot(ctx);
     if (!container.adversary) container.adversary = clone(ledger);
     const meta = ctx.chatMetadata, source = ctx.chat, generationEpoch = epoch(meta);
@@ -280,10 +299,6 @@ export async function observeAdversary(ctx, settings, { signal, targetIndex, sou
     try { parsed = JSON.parse(response.text); } catch { return fail('Strict JSON required'); }
     if (!parsed || Array.isArray(parsed) || !Array.isArray(parsed.proposals) || typeof parsed.commentary !== 'string' || typeof parsed.emotion !== 'string' || (Object.hasOwn(parsed, 'guidance') && typeof parsed.guidance !== 'string') || Object.keys(parsed).some(k => !['guidance', 'proposals', 'commentary', 'emotion'].includes(k))) return fail('Invalid proposal envelope');
     const next = applyTurn(ledger, parsed.proposals, chat, settings, index, facts);
-    next.snapshots.push({ prefix: prefix.slice(0, index + 1), state: stateOf(next) });
-    // Bounded rollback window; edits older than retained exact prefixes reset safely.
-    next.snapshots = next.snapshots.slice(-24);
-    liveContainer.adversary = next; // commit to the current normalized slot after provenance checks
     const critical = next.plots.some(p => p.stage === 'critical');
     // Older envelopes did not distinguish public speech from private observation.
     // Accept their proposals for compatibility, but never publish their commentary.
@@ -293,8 +308,14 @@ export async function observeAdversary(ctx, settings, { signal, targetIndex, sou
     const publicCommentary = legacy ? (critical ? '呵呵，现在可要认真想想了。选择依然在你。' : '别着急，你可以按自己的想法行动。') : parsed.commentary;
     const commentary = settings.commentary?.enabled === false ? '' : text(publicCommentary, limit(settings.commentary?.maxChars, 70));
     const emotion = legacy ? (critical ? 'smug' : 'smile') : EMOTIONS.includes(parsed.emotion) ? parsed.emotion : 'calm';
+    next.publicCache = [...publicCacheOf(next).filter(c => c.targetIndex !== index), { version: 1, targetIndex: index, guidance, commentary, emotion }].slice(-CACHE_LIMIT);
+    next.snapshots.push({ prefix: prefix.slice(0, index + 1), state: stateOf(next) });
+    // Commit successful progress, public output and rollback snapshot together.
+    // Bounded rollback window; edits older than retained exact prefixes reset safely.
+    next.snapshots = next.snapshots.slice(-CACHE_LIMIT);
+    liveContainer.adversary = next;
     // Only these explicit public fields are returned; proposals remain ledger data.
-    return { ok: true, commentary, emotion, guidance, ledger: clone(next), duplicate: false, meta: responseMeta };
+    return { ok: true, commentary, emotion, guidance, ledger: clone(next), duplicate: false, publicCacheAvailable: true, meta: responseMeta };
 }
 
 export function buildAdversaryDirective(ctx, settings) {

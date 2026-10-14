@@ -176,12 +176,15 @@ async function boot() {
                 extensionFolder: EXT_FOLDER,
                 onAvatarClick: () => handleAvatarClick(),
                 onReobserve: async () => {
-                    if (app.inflight) {
-                        toast('碧翠丝正在观测，请等本次完成后再重新观测。', 'info');
+                    if (app.isBusy()) {
+                        toast('正在观测，请等本次完成后再重新观测。', 'info');
                         return;
                     }
+                    toast('已触发重新观测：未提交的楼层重试处理，已提交的楼层只恢复公开结果。', 'info');
                     const outcome = await app.askNow({ force: true });
-                    await app._install(outcome, '重新观测');
+                    const delivered = await app._install(outcome, '重新观测');
+                    if (!delivered?.ok) toast(`重新观测失败：${delivered?.error || outcome?.error || '没有可用结果'}`, 'warning');
+                    else toast('重新观测完成，同一正文不会重复推进阴谋。', 'info');
                 },
                 onAvatarMove: (pos) => {
                     app.settings.ui.avatarPos = pos;

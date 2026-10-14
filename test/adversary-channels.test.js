@@ -41,7 +41,9 @@ test('mocked transport returns independent model speech, keeps plans private and
     const system = f.requests[0][1][0].content;
     for (const rule of ['Three independent channels', 'partial truths', 'misleading lure', 'rationalize', 'cannot change canon', 'erase evidence', 'control user choices', 'not Beatrice', 'chain of thought']) assert.ok(system.includes(rule), rule);
     const repeat = await observeAdversary(f.ctx, f.s);
-    assert.equal(repeat.ok, false);
+    assert.equal(repeat.ok, true);
+    assert.equal(repeat.publicCacheAvailable, true);
+    assert.equal(repeat.guidance, out.guidance);
     assert.equal(repeat.duplicate, true);
     assert.deepEqual(repeat.meta, {});
     assert.equal(f.requests.length, 1);

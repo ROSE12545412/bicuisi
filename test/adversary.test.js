@@ -164,7 +164,7 @@ describe('Evidence-gated optional fictional adversary', () => {
             const out = await observeAdversary(ctx, s);
             assert.equal(out.ok, true); assert.equal(out.guidance, ''); assert.ok(!out.commentary.includes('SECRET'));
             assert.equal(out.ledger.plots[0].stage, 'planned'); assert.equal(out.ledger.snapshots.length, 1);
-            assert.equal((await observeAdversary(ctx, s)).ok, false);
+            assert.equal((await observeAdversary(ctx, s)).ok, true);
             const concurrent = context(); const pending = [];
             LlmClient.prototype.complete = () => new Promise(resolve => pending.push(resolve));
             const first = observeAdversary(concurrent, s), second = observeAdversary(concurrent, s);

@@ -427,14 +427,21 @@ export class GuideController {
         const stage = (name) => { this.lastAdversaryStage = { stage: name, targetIndex, at: Date.now() }; this.log(`人神对抗 · ${name}（正文 #${targetIndex}）`); };
         const fail = (error) => { this.lastError = error || '对抗处理失败'; stage(`停止：${this.lastError}`); return { ok: false, error: this.lastError, adversary: true }; };
         try {
-            stage('事实观测请求开始');
+            const alreadyCommitted = reconcileLedger(ctx).lastTargetIndex >= targetIndex;
+            let observed;
+            let retrieved = { sources: [], sourceAssessment: [], retrievedSources: [] };
+            if (alreadyCommitted) {
+                stage('该楼已提交；恢复公开结果，不重复推进');
+                observed = await observeAdversary(ctx, this.settings, { targetIndex, signal: abort?.signal, validate: valid });
+            } else {
+            stage('该楼尚未提交；开始或重试事实观测');
             const facts = await this.observeCurrentFacts(targetIndex, abort?.signal, token, target);
             if (!facts.ok) return fail(facts.error);
             stage(facts.duplicate ? '复用已有事实；核查线索池' : '事实观测完成；核查线索池');
             const pool = await this.verifiedCurrentHookPool(token);
             if (!pool.ok || !valid()) return fail(pool.error || '请求已作废');
             stage('剧情定位 / 原文适用性核查开始');
-            const retrieved = await retrieveVerifiedSources(ctx, this.settings, {
+            retrieved = await retrieveVerifiedSources(ctx, this.settings, {
                 signal: abort?.signal,
                 hooks: (pool.hooks ?? []).filter(h => !isRuleBook(h.book)),
                 finishedText: String(ctx.chat?.[targetIndex]?.mes ?? ''),
@@ -447,7 +454,8 @@ export class GuideController {
             if (retrieved.error) return fail(retrieved.error);
             if (retrieved.located) this.lastLocated = { ...retrieved.located, at: Date.now() };
             stage('三通道生成请求开始（引导 / 吐槽 / 私有计划）');
-            const observed = await observeAdversary(ctx, this.settings, { targetIndex, signal: abort?.signal, sources: retrieved.sources, validate: valid });
+            observed = await observeAdversary(ctx, this.settings, { targetIndex, signal: abort?.signal, sources: retrieved.sources, validate: valid });
+            }
             if (!observed.ok) return fail(observed.error ?? '对抗观测失败');
             if (!valid())
                 return { ok: false, error: '对抗结果已过期' };
@@ -456,9 +464,13 @@ export class GuideController {
             if (!valid())
                 return { ok: false, error: '保存期间已切换，对抗气泡不再显示' };
             this.syncAdversaryDirector();
-            if (observed.duplicate) { stage('同一正文已处理；不重复投放'); return { ...observed, adversary: true }; }
+            if (observed.duplicate && !observed.publicCacheAvailable) {
+                stage('该楼已提交；旧版本未保存公开结果，不重复推进');
+                this.ui?.say?.('这份正文已经观测过了哦。旧记录没有保存公开低语，不能靠再推进一次来补写；下一楼会正常观测。', { emotion: 'calm' });
+                return { ...observed, adversary: true };
+            }
             const outcome = { ...observed, result: { guidance: observed.guidance ?? '', commentary: observed.commentary ?? '', emotion: observed.emotion ?? 'calm', hooks_used: [] },
-                adversary: true, publicChannels: true, origin, realm: 'void', lifecycle: token,
+                adversary: true, publicChannels: true, restoring: Boolean(observed.duplicate), origin, realm: 'void', lifecycle: token,
                 targetMessageId: targetIndex, targetSnapshot: target, turnIndex: this.currentTurnIndex(),
                 hooks: retrieved.sources, sourceAssessment: retrieved.sourceAssessment, located: retrieved.located };
             const delivered = await this._install(outcome, '人神对抗正文结束');
@@ -629,7 +641,9 @@ export class GuideController {
                 this.log(`接进正文失败：${injected.error}（等了 3 秒，chat 里还是没出现新的 AI 消息）`);
             }
         } else if (mode === 'message') {
-            injected = await injectGuidance(ctx, result, token.settings, { reason, validate: valid });
+            const existingPublic = outcome.restoring && ctx.chat.find(m => m?.extra?.beatriceGuide?.adversaryPublicTarget === target?.id);
+            injected = existingPublic ? { ok: true, message: existingPublic } : await injectGuidance(ctx, result, token.settings, { reason, validate: valid });
+            if (outcome.adversary && injected.message) injected.message.extra.beatriceGuide.adversaryPublicTarget = target?.id;
             if (!valid()) return this.staleOutcome();
             if (injected.ok) tagInjectedMessageDom(ctx);
             else this.log(`注入失败：${injected.error}`);
@@ -658,14 +672,14 @@ export class GuideController {
 
         // ③ 记记忆（去重 + 幂等 + 冷却基准）
         try {
-            if (valid() && target && (result.guidance || result.commentary)) {
+            if (!outcome.restoring && valid() && target && (result.guidance || result.commentary)) {
                 recordGuidance(ctx, { index: target.id, realm: token.settings.realm,
                     guidance: result.guidance, commentary: result.commentary,
                     sources: (outcome.hooks ?? []).filter(h => !h.book || (outcome.sourceAssessment ?? []).some(s => s.status === 'applicable' && s.book === h.book && String(s.uid) === String(h.uid))),
                     located: outcome.located });
             }
             const data = getChatData(ctx);
-            rememberSpoken(data, [result.guidance, result.commentary].filter(Boolean));
+            if (!outcome.restoring) rememberSpoken(data, [result.guidance, result.commentary].filter(Boolean));
             const turnIndex = Number(outcome.turnIndex) || this.currentTurnIndex();
             if (!data.guidedTurns.includes(turnIndex)) data.guidedTurns.push(turnIndex);
             if (data.guidedTurns.length > 500) data.guidedTurns = data.guidedTurns.slice(-500);
