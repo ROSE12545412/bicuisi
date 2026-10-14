@@ -476,11 +476,13 @@ export class GuideController {
     }
 
     /** 取消在途请求（用户点了停止生成时用）。 */
-    cancelInflight() {
+    cancelInflight(reason = '显式取消') {
+        if (this.inflight || this.abort) this.log(`取消观测：${reason}`);
+        this._lastCancellationReason = reason;
         this._requestEpoch = (this._requestEpoch ?? 0) + 1;
         this.inflight = null;
         try {
-            this.abort?.abort?.();
+            this.abort?.abort?.(new Error(`观测取消：${reason}`));
         } catch {
             /* ignore */
         }
@@ -758,7 +760,7 @@ export class GuideController {
         // source snapshot even if AFTER_COMMANDS arrives after streaming begins.
         if (this._generationActive) return;
         this._generationActive = true;
-        this.cancelInflight();
+        this.cancelInflight('收到新的正文生成开始事件');
         this._generationBaseline = this.lastAiMessageIndex();
         this._generationSource = this.captureTarget(this._generationBaseline);
         this.syncAdversaryDirector();
@@ -808,6 +810,10 @@ export class GuideController {
         this.ui?.setTyping?.('正在观测…');
         try {
             this.log('收到正文生成结束事件；准备观测');
+            // stopGeneration may emit ENDED before STOPPED in the same stack.
+            // Give STOPPED a chance to invalidate this turn before any API call.
+            await Promise.resolve();
+            if (generationEpoch !== (this._requestEpoch ?? 0)) return;
             const outcome = await this.runPostGeneration();
             if (!outcome?.ok && !outcome?.aborted && !outcome?.stale) {
                 this.lastError = outcome?.error || '未触发引导';
@@ -833,6 +839,8 @@ export class GuideController {
             const targetIdx = await this.waitForFreshAiMessage(baseline, 3000, token, source);
             if (!this.lifecycleValid(token)) return this.staleOutcome();
             if (targetIdx < 0) return { ok: false, error: '等不到刚生成的正文，这次不出声' };
+            this.log(`等待正文 #${targetIdx} 收尾稳定后观测`);
+            if (!await this.waitForSettledProse(targetIdx, token)) return this.staleOutcome('正文尚未稳定，或等待期间聊天、模式已改变或请求已取消；未发送辅助请求');
             const target = this.captureTarget(targetIdx, token.ctx);
             if (adversaryEnabled(token.settings)) return this.runAdversaryTurn(targetIdx, token);
             const turnIndex = this.currentTurnIndex();
@@ -860,7 +868,7 @@ export class GuideController {
     /** 事件：生成被用户停止。 */
     onGenerationStopped() {
         this._generationActive = false;
-        this.cancelInflight();
+        this.cancelInflight('收到 GENERATION_STOPPED 停止事件');
     }
 
     /**
@@ -879,7 +887,7 @@ export class GuideController {
     /** 事件：切换聊天。记忆与缓存全部作废。 */
     onChatChanged() {
         this.refreshContext();
-        this.cancelInflight();
+        this.cancelInflight('聊天切换或聊天容器被替换');
         this._generationActive = false;
         this._generationBaseline = undefined;
         this._generationSource = null;
@@ -1009,6 +1017,28 @@ export class GuideController {
             if (Date.now() >= deadline) return -1;
             await new Promise((r) => setTimeout(r, step));
         }
+    }
+
+    /** Wait for completed prose, not merely an existing streaming floor.
+     * Bounded wait, no API retries. Cancellation/edit guards stay active once
+     * observation starts; only pre-request host finalization is absorbed here.
+     */
+    async waitForSettledProse(id, token, { quietMs = 1200, timeoutMs = 8000, stepMs = 100 } = {}) {
+        const signature = () => JSON.stringify(token.chat.map(m => [m?.mes ?? '', m?.is_user, m?.is_system, m?.name, m?.swipe_id, m?.swipes]));
+        let previous = signature(), since = Date.now();
+        const deadline = since + timeoutMs;
+        while (Date.now() < deadline) {
+            if (!this.lifecycleValid(token) || this.lastAiMessageIndex() !== id) return false;
+            const current = signature();
+            if (current !== previous) { previous = current; since = Date.now(); }
+            const target = token.chat[id];
+            const streaming = this.ctx?.streamingProcessor;
+            const active = streaming && streaming.isFinished === false;
+            if (!active && target && !target.is_user && !target.is_system && String(target.mes ?? '').trim() && Date.now() - since >= quietMs) return true;
+            await new Promise(resolve => setTimeout(resolve, stepMs));
+        }
+        this.log(`正文 #${id} 收尾等待超时，未发送辅助请求`);
+        return false;
     }
 
     /**

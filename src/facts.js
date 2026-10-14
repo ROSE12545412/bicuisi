@@ -134,7 +134,11 @@ export async function observeFacts(ctx, settings, { signal, targetIndex, validat
     if (owner(ctx) !== identity) staleReasons.push('chat/card identity changed');
     if (card(ctx) !== cardStamp) staleReasons.push('character data changed');
     if (mode(settings) !== modeStamp) staleReasons.push('API/mode settings changed');
-    if (JSON.stringify(fingerprints(ctx)) !== JSON.stringify(prefix)) staleReasons.push('prose/swipe/source changed');
+    const currentPrefix = fingerprints(ctx);
+    if (JSON.stringify(currentPrefix) !== JSON.stringify(prefix)) {
+        const floors = [...new Set([...prefix.keys(), ...currentPrefix.keys()])].filter(i => prefix[i] !== currentPrefix[i]).slice(0, 8);
+        staleReasons.push(`prose/swipe/source changed (floors ${floors.join(',')}; length ${prefix.length}->${currentPrefix.length})`);
+    }
     // saveChatData replaces the plugin slot with a normalized copy. An identical
     // facts ledger is not a new observation or clear; commit to the live slot.
     const liveContainer = meta[KEY];

@@ -87,6 +87,7 @@ test('r22 stale rejected metadata save never falls back to saveChat', async () =
 
 test('r22 post-generation locks pool phase and stop prevents facts or compose', async () => {
     const { app, ctx } = setup(); let release, facts = 0;
+    app.waitForSettledProse = async () => true; // this test isolates pool-phase cancellation
     app.ensureHookPool = () => new Promise(r => { release = r; });
     app.observeCurrentFacts = async () => { facts++; return { ok: true }; };
     const first = app.runPostGeneration(); await tick();

@@ -333,10 +333,17 @@ function hookEvents(app, ctx) {
     // ── 核心时序：正文开始生成 → 并发发起辅助请求 ──────────────────────
     // 这是整个插件最要紧的一行。放这里而不是 GENERATION_ENDED，
     // 才能让辅助模型与正文模型**同时**工作，正文结束时结果已经到手。
-    listen('GENERATION_AFTER_COMMANDS', () => app.onGenerationStart());
+    const proseStart = (type, options, dryRun) => {
+        if (dryRun === true || type === 'quiet' || type === 'impersonate') {
+            app.debug('跳过非正文生成生命周期事件');
+            return;
+        }
+        app.onGenerationStart();
+    };
+    listen('GENERATION_AFTER_COMMANDS', proseStart);
 
     // 兜底：有些酒馆/某些触发路径不发 GENERATION_AFTER_COMMANDS
-    listen('GENERATION_STARTED', () => app.onGenerationStart());
+    listen('GENERATION_STARTED', proseStart);
 
     // ── 正文结束 → 兑现结果并注入 ──────────────────────────────────────
     listen('GENERATION_ENDED', () => app.onGenerationEnd());
