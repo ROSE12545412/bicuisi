@@ -1,0 +1,720 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>碧翠丝的禁书库 · 浏览器渲染验收</title>
+<!--
+  这是**仅用于开发验收**的页面，不随扩展发布，酒馆也不会加载它。
+
+  为什么要它：扩展在浏览器里到底长什么样，单元测试和冒烟测试都答不了 ——
+  那两套用的是假 DOM。这个页面把真实的 `index.js` 加载起来，配一个最小的
+  假酒馆上下文，然后用无头浏览器截图，人眼确认悬浮窗、气泡、情绪配色、
+  设置面板的观感。
+
+  用法：
+    msedge --headless=new --screenshot=out.png --window-size=1280,900 harness.html
+-->
+<!-- 扩展在酒馆里由 manifest.json 的 css 字段注入样式表；这里手动引一次 -->
+<link rel="stylesheet" href="../style.css">
+<style>
+  html, body { margin: 0; height: 100%; }
+  body {
+    background: #15161f;
+    color: #d8dbe8;
+    font: 14px/1.7 "Microsoft YaHei", "PingFang SC", system-ui, sans-serif;
+  }
+  /* 模拟酒馆的聊天区与扩展设置抽屉，用来检查 z-index 与遮挡关系 */
+  #chat { padding: 24px 32px; max-width: 720px; }
+  .mes { background: #1e2030; border-radius: 10px; padding: 12px 16px; margin: 0 0 12px; }
+  .mes[is_user="true"] { background: #262b45; }
+  .mes .name { color: #8f9bc4; font-size: 12px; }
+  #extensions_settings {
+    position: fixed; right: 0; top: 0; bottom: 0; width: 380px;
+    background: #1a1c28; border-left: 1px solid #2c3044;
+    overflow: auto; padding: 14px; box-sizing: border-box;
+  }
+  #extensions_settings h3 { margin: 0 0 10px; font-size: 13px; color: #8f9bc4; }
+</style>
+</head>
+<body>
+
+<div id="chat">
+  <div class="mes" is_user="true"><div class="name">你</div>那我先去街上转转好了，顺便看看有没有人卖那种会发光的石头。</div>
+  <div class="mes"><div class="name">爱蜜莉雅</div>……嗯，那我们一起走吧？不过天快黑了，还是别走太远比较好。</div>
+  <div class="mes" is_user="true"><div class="name">你</div>放心，我心里有数。真要出事我一口气能打三个。</div>
+</div>
+
+<div id="extensions_settings">
+  <h3>扩展设置（模拟酒馆）</h3>
+  <!-- 插件面板会被挂到这里 -->
+</div>
+
+<!-- 验收用的状态探针：哪一步断了，直接显示在页面上（比翻控制台快） -->
+<div id="probe" style="position:fixed;left:0;bottom:0;z-index:99999;background:#000;color:#0f0;font:12px/1.5 monospace;padding:6px 10px;max-width:100%;white-space:pre-wrap"></div>
+<script>
+  window.__probe = (msg) => {
+    const p = document.getElementById('probe');
+    if (p) p.textContent += msg + '\n';
+    document.title = msg;
+  };
+  window.addEventListener('error', (e) => window.__probe('ERROR: ' + (e.message || e.error)));
+  window.addEventListener('unhandledrejection', (e) => window.__probe('REJECT: ' + (e.reason && e.reason.message ? e.reason.message : e.reason)));
+  window.__probe('boot: html parsed');
+</script>
+
+<script type="module">
+// ---------------------------------------------------------------------------
+// 最小假酒馆上下文。只实现扩展真正会用到的那部分 API。
+// ---------------------------------------------------------------------------
+
+const listeners = [];
+const calls = [];
+
+const ctx = {
+  chat: [
+    { name: '你', is_user: true, is_system: false, mes: '那我先去街上转转好了，顺便看看有没有人卖那种会发光的石头。' },
+    { name: '爱蜜莉雅', is_user: false, is_system: false, mes: '……嗯，那我们一起走吧？不过天快黑了，还是别走太远比较好。' },
+    { name: '你', is_user: true, is_system: false, mes: '放心，我心里有数。真要出事我一口气能打三个。' },
+  ],
+  characters: [{ name: '爱蜜莉雅', data: { extensions: { world: 'Re从零开始的世界书' } } }],
+  characterId: 0,
+  name1: '你',
+  name2: '爱蜜莉雅',
+  chatMetadata: {},
+  extensionSettings: {
+    connectionManager: {
+      profiles: [
+        { id: 'p-fast', name: '快速模型（贝翠丝用）', api: 'custom', model: 'gemini-flash' },
+        { id: 'p-main', name: '正文模型', api: 'custom', model: 'claude-sonnet' },
+      ],
+    },
+  },
+  powerUserSettings: { world_info: { globalSelect: ['Re从零开始的世界书'] } },
+  saveSettingsDebounced: async () => {},
+
+  // 假世界书：**刻意做成「作者完全没为本插件标过标签」的样子**。
+  //
+  // 这是新设计的验收重点：默认情况下贝翠丝要能读懂这些没标签的条目，
+  // 由 AI 判断哪些是剧情条目。如果还依赖 `[引导]` 标签，这个夹具下就没有线索可用。
+  loadWorldInfo: async () => ({
+    entries: {
+      0: { comment: '旧城区的传言', content: '最近旧城区总有人在夜里搬运箱子，白天却什么痕迹都没有。', order: 1 },
+      1: { comment: '王都下水道', content: '下水道通往城墙外，很少有人知道这条捷径。', order: 2 },
+      2: { comment: '连下了三天的雨', content: '往年这个季节从没这样下过，老人说不太对劲。', order: 3 },
+      // 这一条要能被读懂并排除：纯静态设定
+      3: { comment: '爱蜜莉雅人物设定', content: '银发半精灵，本性善良，喜欢照顾小动物。', constant: true, order: 4 },
+      // 这一条要能被硬排除：用户主动声明的剧透保护
+      4: { comment: '[禁止引导] 魔女教的真相', content: '这一段绝不能提前透露。', order: 5 },
+    },
+  }),
+
+  eventTypes: {
+    GENERATION_AFTER_COMMANDS: 'GENERATION_AFTER_COMMANDS',
+    GENERATION_STARTED: 'generation_started',
+    GENERATION_ENDED: 'generation_ended',
+    GENERATION_STOPPED: 'generation_stopped',
+    MESSAGE_RECEIVED: 'message_received',
+    MESSAGE_SWIPED: 'message_swiped',
+    MESSAGE_EDITED: 'message_edited',
+    MESSAGE_DELETED: 'message_deleted',
+    CHAT_CHANGED: 'chat_id_changed',
+    WORLDINFO_UPDATED: 'worldinfo_updated',
+    WORLDINFO_ENTRIES_LOADED: 'worldinfo_entries_loaded',
+    SETTINGS_UPDATED: 'settings_updated',
+    APP_READY: 'app_ready',
+  },
+  eventSource: {
+    on(name, handler) { listeners.push([name, handler]); return { stop() {} }; },
+    once() {}, makeLast() {}, makeFirst() {}, removeListener() {},
+    async emit(name, ...args) { for (const [n, h] of listeners) if (n === name) await h(...args); },
+    async emitAndWait(name, ...args) { for (const [n, h] of listeners) if (n === name) await h(...args); },
+  },
+
+  // 假辅助 API：按**请求类型**返回不同内容
+  ConnectionManagerRequestService: {
+    async sendRequest(profileId, messages, maxTokens) {
+      const joined = messages.map((m) => String(m.content)).join('\n');
+      // 每一步都有自己的系统提示词，据此分辨请求类型。
+      // ⚠️ 判定顺序有讲究：「编索引」和「定位」都像「读世界书」，
+      // 但它们要的**输出格式完全不同** —— 认错了会返回一份解析不了的 JSON，
+      // 表现出来就是「她突然不说话了」，很难查。
+      const isExtract = joined.includes('剧情索引提取 AI');
+      const isIndex = isExtract || joined.includes('图书管理员') || (joined.includes('未来剧情线索') && joined.includes('"brief"'));
+      const isLocate = !isIndex && joined.includes('熟悉这部作品的读者');
+      const isScan = !isIndex && !isLocate && (joined.includes('资深跑团主持人') || joined.includes('读书 AI'));
+      calls.push({
+        profileId,
+        messages,
+        kind: isIndex ? 'index' : isLocate ? 'locate' : isScan ? 'scan' : 'guide',
+      });
+
+      let content;
+      if (isExtract) {
+        const count = [...joined.matchAll(/^\d+\. .*\[来源 /gm)].length || 3;
+        content = JSON.stringify({ index: Array.from({length: count}, (_, i) => ({index: i+1, brief:'已确认剧情'+(i+1),phase:'未来',events:['事件'],characters:['人物']})) });
+      } else if (isIndex) {
+        // 编索引：每条一行，带简要描述与阶段。**不淘汰条目**（那是旧设计）。
+        content = JSON.stringify({
+          index: [
+            { index: 1, brief: '有人说夜里有人搬箱子，白天却什么都没有', phase: '任何阶段' },
+            { index: 2, brief: '王都地下有纵横的水道，可以走人', phase: '任何阶段' },
+            { index: 3, brief: '连着下了三天的雨，反常', phase: '刚到王都' },
+            { index: 4, brief: '爱蜜莉雅的身份与性格', phase: '任何阶段' },
+          ],
+        });
+      } else if (isLocate) {
+        // 定位：先判断演到哪，再挑编号。
+        content = JSON.stringify({
+          phase: '刚到王都，还在街上闲逛，什么都还没发生',
+          pick: [1, 3],
+          why: '第 1 条是还没兑现的传言，第 3 条的雨是征兆；第 2、4 条太泛',
+        });
+      } else if (isScan) {
+        // 旧路径（筛选式通读）的返回，保留以兼容旧场景
+        content = JSON.stringify({
+          picks: [
+            { index: 1, kind: '线索', reason: '某人的异常举动，可追查' },
+            { index: 2, kind: '地点', reason: '有具体位置且有事可做' },
+            { index: 3, kind: '征兆', reason: '天气异常，是即将发生的事的提示' },
+          ],
+        });
+      } else {
+        content = JSON.stringify({
+          guidance: '哼……今天街上的人都在往同一个方向走，真吵。贝蒂才不好奇他们去干什么。',
+          commentary: '一口气说能打三个？你连人家卖花的都打不过吧，笨蛋。',
+          emotion: 'smug',
+          hooks_used: ['旧城区的传言'],
+        });
+      }
+      // 故意慢一点，好让「正在观测」的动画能被截到
+      await new Promise((r) => setTimeout(r, 150));
+      return { result: { choices: [{ message: { content } }] } };
+    },
+  },
+
+  async addOneMessage(message) {
+    const idx = ctx.chat.length - 1;
+    const d = document.createElement('div');
+    d.className = 'mes';
+    d.setAttribute('is_user', 'false');
+    // ⚠️ mesid 必须有 —— 插件靠 `#chat .mes[mesid="N"] .mes_text` 找楼层。
+    // 假上下文里漏了它，就等于在验收时把「接正文」这条路堵死，
+    // 看到的会是「正文末尾没接上」的假象。
+    d.setAttribute('mesid', String(idx));
+    const nameEl = document.createElement('div');
+    nameEl.className = 'name';
+    nameEl.textContent = message.name;
+    const textEl = document.createElement('div');
+    textEl.className = 'mes_text';
+    textEl.textContent = message.mes;
+    d.appendChild(nameEl);
+    d.appendChild(textEl);
+    document.getElementById('chat').appendChild(d);
+  },
+
+  /**
+   * 酒馆的官方重渲染入口。
+   *
+   * 插件接正文走的就是它（用 display_text ?? mes）。这里如实实现，
+   * 好让验收页能真正验证「她的话有没有出现在楼层里」。
+   */
+  updateMessageBlock(messageId, message, opts = {}) {
+    const node = document.querySelector(`#chat .mes[mesid="${messageId}"] .mes_text`);
+    if (!node) return; // 楼层不存在 → 空操作（和真实酒馆一致）
+    node.textContent = message?.extra?.display_text ?? message?.mes ?? '';
+  },
+
+  async saveChat() {},
+  async saveMetadata() {},
+};
+
+window.SillyTavern = { getContext: () => ctx };
+window.__probe('ctx: ready');
+
+// ---------------------------------------------------------------------------
+// 加载扩展本体
+// ---------------------------------------------------------------------------
+window.__probe('import: 开始');
+const ext = await import('../index.js');
+window.__probe('import: 成功');
+
+await ext.boot();
+window.__probe('boot: 完成');
+
+const api = window.BeatriceGuide;
+window.__probe('api: ' + (api ? 'window.BeatriceGuide 存在' : 'window.BeatriceGuide 缺失！'));
+
+const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+const shot = new URLSearchParams(location.search).get('shot') || 'config';
+
+if (shot === 'lore-fix') {
+  const rows = [];
+  const check = (name, ok) => { rows.push(`${ok ? 'PASS' : 'FAIL'} ${name}`); if (!ok) throw Error(name); };
+  try {
+    api.app.settings.realm = 'void'; api.app.settings.llm.profileId = 'main-profile';
+    api.app.openSettingsWindow('lore');
+    check('人神说明正确', document.querySelector('.bg-win-panel').textContent.includes('人神会'));
+    check('旧选项已移除', !/③ 排除|③ 或者自己挑|只读带标签的条目/.test(document.querySelector('.bg-win-panel').textContent));
+    check('通读与自己挑共用按钮行', [...document.querySelectorAll('.bg-win-panel button')].some(b => /让 AI 通读/.test(b.textContent) && /自己挑/.test(b.parentElement.textContent)));
+    const readingProgress = [];
+    const built = await api.app.buildHookPool({ force: true, onProgress: p => readingProgress.push(p) });
+    check('通读覆盖全部非空正文', built.ok && built.coverage?.complete && built.coverage.entries === 5);
+    check('阅读进度含调用次数', readingProgress.some(p => p.currentCall >= 1 && p.totalCalls >= 1));
+    check('阅读后停在审核阶段', built.needsConfirmation && !api.app.readHookPool().ok);
+    api.app.openSettingsWindow('llm'); api.app.openSettingsWindow('lore'); await wait(250);
+    check('候选预先打勾待确认', [...document.querySelectorAll('.bg-win-panel input[type="checkbox"]')].some(c => c.checked) && document.querySelector('.bg-win-panel').textContent.includes('确认选择并开始提取'));
+    const extractionProgress = [];
+    const extracted = await api.app.confirmHookPoolSelection(built.selectedIndices, { reviewId: built.reviewId, onProgress: p => extractionProgress.push(p) });
+    check('确认后才能提取入池', extracted.ok && api.app.readHookPool().ok);
+    check('提取独立进度与调用次数', extractionProgress.some(p => p.stage === 'extracting' && p.currentCall >= 1 && p.totalCalls >= 1));
+    api.app.openSettingsWindow('pool'); await wait(250);
+    const save = [...document.querySelectorAll('.bg-win-panel button')].find(b => b.textContent.includes('保存并绑定当前角色卡'));
+    check('线索池提供保存按钮', !!save);
+    const result = await api.app.saveHookPool();
+    check('明确保存绑定当前卡', result.ok && result.pool?.savedAt && result.pool?.character);
+    check('返回按钮文案完整', document.querySelector('.bg-win-foot').textContent.includes('返回碧翠丝的禁书库'));
+    const out = document.createElement('pre'); out.id = 'lore-results'; out.dataset.result = 'passed'; out.textContent = rows.join('\n'); document.body.append(out);
+  } catch (e) { const out = document.createElement('pre'); out.id = 'lore-results'; out.dataset.result = 'failed'; out.textContent = rows.join('\n')+'\n'+e.stack; document.body.append(out); }
+} else if (shot === 'void') {
+  const checks = [];
+  const check = (label, ok) => { checks.push(`${ok ? 'PASS' : 'FAIL'} ${label}`); if (!ok) throw Error(label); };
+  try {
+    const savedPersona = JSON.stringify(api.app.settings.persona);
+    const savedApi = JSON.stringify(api.app.settings.llm);
+    api.app.openSettingsWindow();
+    const toggle = () => [...document.querySelectorAll('.bg-win-foot button')].find(b => /进入无之空间|返回碧翠丝/.test(b.textContent));
+    check('设置底部有进入选项', !!toggle());
+    api.app._guideRequests = 1; toggle().click(); await wait(50);
+    check('请求期间禁止切换', api.app.settings.realm === 'beatrice');
+    api.app._guideRequests = 0;
+    toggle().click(); await wait(200);
+    check('模式持久化并切换标题', api.app.settings.realm === 'void' && document.querySelector('.bg-win-title')?.textContent.includes('无之空间'));
+    check('悬浮图使用人神', document.querySelector('.bg-avatar-img')?.src.endsWith('/assets/hitogami.jpg') && document.querySelector('.bg-avatar-img')?.naturalWidth > 0);
+    check('设置主题切换', document.querySelector('.bg-win-overlay')?.dataset.bgRealm === 'void');
+    check('原配置不被覆盖', JSON.stringify(api.app.settings.persona) === savedPersona && JSON.stringify(api.app.settings.llm) === savedApi);
+    if (!new URLSearchParams(location.search).has('stay')) {
+      toggle().click(); await wait(200);
+      check('可恢复碧翠丝', api.app.settings.realm === 'beatrice' && !document.querySelector('.bg-avatar-img')?.src.endsWith('/assets/hitogami.jpg'));
+    }
+    const out = document.createElement('pre'); out.id = 'void-results'; out.dataset.result = 'passed'; out.textContent = checks.join('\n'); document.body.append(out);
+  } catch (e) { const out = document.createElement('pre'); out.id = 'void-results'; out.dataset.result = 'failed'; out.textContent = checks.join('\n') + '\n' + e.stack; document.body.append(out); }
+} else if (shot === 'config') {
+  // 场景 A：点头像 → 打开插件自己的设置窗（这是用户要的「单独的 API 设置界面」）
+  //
+  // 注意：要先改通道模式再开窗。设置窗的内容是打开那一刻渲染的，
+  // 先开窗再改模式，面板里还停留在「连接配置」的界面（踩过一次）。
+  api.app.settings.llm.mode = 'custom';
+  // 指向验收服务器上的假 /models 端点，好走通「拉取模型」这一整条路
+  api.app.settings.llm.custom.url = location.origin + '/mock/v1';
+  api.app.settings.llm.custom.model = '';
+  api.app.settings.llm.custom.modelList = [];
+  api.app.settings.cadence.mode = 'always';
+  api.app.settings.ui.customImageSrc = '../assets/beatrice.png';
+
+  // 直接开窗（不依赖点击事件的异步链，避免验收脚本被时序坑到）
+  window.__probe('openSettingsWindow 是函数 = ' + typeof api.app.openSettingsWindow);
+  try {
+    api.app.openSettingsWindow();
+  } catch (e) {
+    window.__probe('openSettingsWindow 抛异常: ' + (e && e.message ? e.message : e));
+  }
+  await wait(600);
+  window.__probe('settingsWindow 实例 = ' + Boolean(api.settingsWindow && api.settingsWindow()));
+  window.__probe('overlay 在页面上 = ' + Boolean(document.querySelector('.bg-win-overlay')));
+  window.__probe('overlay data-open = ' + (document.querySelector('.bg-win-overlay')?.dataset.open ?? '无'));
+  // 把插件日志里最近几条摊出来 —— 内部失败会被 app.log 记下
+  window.__probe('插件日志尾部: ' + JSON.stringify(api.app.logLines.slice(-3)));
+
+  // 自动点一次「拉取模型」，截到填充后的下拉框
+  const pull = [...document.querySelectorAll('.bg-win-panel .bg-btn')].find((b) =>
+    (b.textContent || '').includes('拉取模型'),
+  );
+  window.__probe('拉到按钮 = ' + Boolean(pull));
+  if (pull) {
+    pull.click();
+    await wait(1200);
+  }
+  const sel = document.querySelector('.bg-win-panel select');
+  if (sel) {
+    window.__probe(
+      '下拉框选项 = ' + [...sel.options].map((o) => o.text).join(' | ') + '  → 选中: ' + sel.value,
+    );
+  } else {
+    window.__probe('没找到下拉框！');
+  }
+  window.__stage = 'settings-window';
+  window.__ready = true;
+  window.__calls = calls;
+} else if (shot === 'tab-persona') {
+  // 场景 B：人设提示词编辑器 —— 顺便验证「改完能存住」
+  //
+  // 用户实测反馈过「人设提示词没设置保存」。那次的根因在配置补全层
+  // （对象数组被当字符串数组滤空），不在 UI。所以这里**走一遍真实动作**：
+  // 往文本域里写内容 → 触发 change（失焦）→ 走一次 getSettings 补全 → 看还在不在。
+  api.app.settings.ui.customImageSrc = '../assets/beatrice.png';
+  api.app.openSettingsWindow('persona');
+  await wait(600);
+
+  const ta = document.querySelector('.bg-promptlist textarea');
+  window.__probe('找到人设文本域 = ' + Boolean(ta));
+  if (ta) {
+    const before = ta.value.slice(0, 30);
+    window.__probe('修改前开头 = ' + JSON.stringify(before));
+
+    ta.value = '【测试写入】贝蒂是住在你脑子里的精灵，别乱跑。';
+    ta.dispatchEvent(new Event('change', { bubbles: true }));
+    await wait(300);
+
+    // 关掉再开：这一步会走完整条「落盘 → 重新 getSettings → 重画」
+    api.settingsWindow().close();
+    await wait(200);
+    api.app.openSettingsWindow('persona');
+    await wait(500);
+
+    const ta2 = document.querySelector('.bg-promptlist textarea');
+    window.__probe('重开后第一条 = ' + JSON.stringify((ta2?.value ?? '').slice(0, 40)));
+    window.__probe('内容保住了吗 = ' + (ta2 && ta2.value.includes('测试写入') ? '✅ 保住了' : '❌ 丢了'));
+    window.__probe('落盘的分段数 = ' + (api.app.settings.persona.prompts?.length ?? 0));
+  }
+  window.__stage = 'tab-persona';
+  window.__ready = true;
+  window.__calls = calls;
+} else if (shot === 'migrate') {
+  // 场景 E：内置人设版本迁移
+  //
+  // 模拟用户诊断里那种状态：settings 里存着一份**几个月前的内置提示词**
+  //（段落标题是「【引导要求」、也没有 timing 段），版本号字段还不存在。
+  const s = api.app.settings;
+  const stale = [
+    { id: 'identity', role: 'system', content: '你扮演「贝翠丝」。\n\n贝翠丝是一位**寄居在契约者脑海里的契约精灵**。', enabled: true },
+    { id: 'personality', role: 'system', content: '【性格】毒舌、傲娇。', enabled: true },
+    { id: 'speech', role: 'system', content: '【说话规则】中文，短句。', enabled: true },
+    { id: 'guidance', role: 'system', content: '【引导要求 —— 这一段最重要，违反就算失败】\n旧版文案。', enabled: true },
+    { id: 'commentary', role: 'system', content: '【吐槽要求】40 字以内。', enabled: true },
+    { id: 'ack', role: 'assistant', content: '哼，知道了。', enabled: true },
+  ];
+  s.persona.prompts = stale.map((x) => ({ ...x }));
+  s.persona.promptsVersion = 0;
+
+  window.__probe('【内置人设版本迁移】');
+  window.__probe('  迁移前条数 = ' + s.persona.prompts.length + '，版本号 = ' + s.persona.promptsVersion);
+  window.__probe('  迁移前有 timing 段吗 = ' + (s.persona.prompts.some((p) => p.id === 'timing') ? '有' : '❌ 没有（旧版）'));
+  window.__probe('  迁移前 guidance 开头 = ' + JSON.stringify(s.persona.prompts.find((p) => p.id === 'guidance').content.slice(0, 12)));
+
+  // 走一次解析（真实路径就是这样触发的）
+  const { resolvePersonaPrompts } = await import('../src/prompts.js');
+  const got = resolvePersonaPrompts(s);
+
+  window.__probe('  迁移后条数 = ' + got.length + '，版本号 = ' + s.persona.promptsVersion);
+  window.__probe('  ⭐ 新 timing 段进来了 = ' + (got.some((p) => p.id === 'timing') ? '✅ 是' : '❌ 否'));
+  window.__probe('  ⭐ guidance 换成新文案 = ' +
+    (/接着他刚才的处境说/.test(got.find((p) => p.id === 'guidance').content) ? '✅ 是' : '❌ 否'));
+  window.__probe('  ⭐ 提示词总长度 = ' + got.reduce((n, p) => n + p.content.length, 0) + ' 字（旧版约 ' +
+    stale.reduce((n, p) => n + p.content.length, 0) + ' 字）');
+
+  // 再验一次「用户自己写的不会被覆盖」
+  const s2 = api.app.settings;
+  s2.persona.prompts = [{ id: 'mine', role: 'system', content: '我自己写的规则。', enabled: true }];
+  s2.persona.promptsVersion = 0;
+  const got2 = resolvePersonaPrompts(s2);
+  window.__probe('  ⭐ 用户自定义的一条都不动 = ' +
+    (got2.length === 1 && got2[0].content === '我自己写的规则。' ? '✅ 是' : '❌ 被覆盖了'));
+
+  window.__stage = 'migrate';
+  window.__ready = true;
+  window.__calls = calls;
+} else if (shot === 'tab-guide') {
+  // 场景 B2：切到「引导与吐槽」页 —— 看定位模式那几个新控件
+  api.ui.node.querySelector('.bg-avatar').dispatchEvent(new MouseEvent('click', { bubbles: true }));
+  await wait(400);
+  api.settingsWindow().setTab('guide');
+  await wait(300);
+  const body = document.querySelector('.bg-win-body')?.textContent ?? '';
+  window.__probe('【引导与吐槽栏】');
+  window.__probe('  有「定位」这一项 = ' + (/定位/.test(body) ? '✅ 是' : '❌ 否'));
+  window.__probe('  有「自动（索引够大时才跑）」= ' + (/索引够大时才跑/.test(body) ? '✅ 是' : '❌ 否'));
+  window.__probe('  自动模式下露出门槛设置 = ' + (/索引超过几条才跑/.test(body) ? '✅ 是' : '❌ 否'));
+  window.__probe('  有「最多挑几条」= ' + (/最多挑几条/.test(body) ? '✅ 是' : '❌ 否'));
+  window.__stage = 'tab-guide';
+  window.__ready = true;
+} else if (shot === 'tab-lore') {
+  // 场景 B：切到「世界书线索」页
+  api.ui.node.querySelector('.bg-avatar').dispatchEvent(new MouseEvent('click', { bubbles: true }));
+  await wait(400);
+  api.settingsWindow().setTab('lore');
+  await wait(300);
+  window.__stage = 'tab-lore';
+  window.__ready = true;
+} else if (shot === 'pool') {
+  // 场景 F：线索池栏（可见 + 可编辑）
+  //
+  // 验收重点：能不能看见池子内容、能不能改、改完还在不在。
+  api.app.settings.llm.profileId = 'p-fast';
+  api.app.settings.worldbook.bookNames = ['Re从零开始的世界书'];
+
+  // 先建一份池子（走手动路径，不需要 AI）
+  const collected = await api.app.prepareScanCandidates();
+  await api.app.buildHookPoolFromPicks(collected.candidates, [1, 2, 3]);
+
+  const before = api.app.readHookPool();
+  window.__probe('【线索池栏】');
+  window.__probe('  归属卡 = ' + JSON.stringify(before.character) + '　条数 = ' + before.hooks.length);
+  window.__probe('  来源 = ' + before.source + '　可用 = ' + before.fresh);
+  window.__probe('  条目 = ' + JSON.stringify(before.hooks.map((h) => h.label)));
+
+  // 改一条
+  await api.app.updateHook(0, { label: '我改过的标题' });
+  const afterEdit = api.app.readHookPool();
+  window.__probe('  ⭐ 改标题生效 = ' + (afterEdit.hooks[0].label === '我改过的标题' ? '✅ 是' : '❌ 否'));
+  window.__probe('  ⭐ 标记为已编辑 = ' + (afterEdit.edited ? '✅ 是' : '❌ 否'));
+  window.__probe('  别的条目没被牵连 = ' + (afterEdit.hooks[1].label === before.hooks[1].label ? '✅ 是' : '❌ 否'));
+
+  // 删一条
+  await api.app.removeHook(2);
+  window.__probe('  ⭐ 删除生效 = ' + (api.app.readHookPool().hooks.length === 2 ? '✅ 是' : '❌ 否'));
+
+  // 补一条
+  await api.app.addHook({ label: '我补的线索', content: '正文素材' });
+  window.__probe('  ⭐ 手工补一条 = ' + (api.app.readHookPool().hooks.length === 3 ? '✅ 是' : '❌ 否'));
+
+  // 打开线索池栏截图
+  api.app.openSettingsWindow('pool');
+  await wait(700);
+  const tabs = document.querySelectorAll('.bg-win-tab');
+  window.__probe('  标签页数 = ' + tabs.length + '　' +
+    JSON.stringify([...tabs].map((t) => t.textContent.trim())));
+  window.__probe('  线索池栏里有条目吗 = ' +
+    (document.querySelectorAll('.bg-poolrow').length > 0 ? '✅ 有 ' + document.querySelectorAll('.bg-poolrow').length + ' 行' : '❌ 没有'));
+
+  // ── 索引格式 + 定位结论的显示（两段式新增）────────────────────────────
+  //
+  // 用户要能验证「她判断演到哪、挑了哪几条」—— 挑偏了才看得出是索引写坏了
+  // 还是她读错了位置。所以这一段专门验显示，不验逻辑（逻辑在单测里）。
+  const { setCharacterPool: setPool } = await import('../src/core/store.js');
+  setPool(api.app.ctx, [
+    { book: 'Re从零开始的世界书', uid: 0, label: '旧城区的传言', brief: '夜里有人搬箱子', phase: '刚到王都', kind: '线索' },
+    { book: 'Re从零开始的世界书', uid: 1, label: '王都下水道', brief: '地下有暗渠可走', phase: '任何阶段', kind: '地点' },
+  ], ['Re从零开始的世界书'], { source: 'ai', indexed: true });
+  api.app.hookCache = null;
+  api.app.lastLocated = { phase: '刚到王都，还在街上闲逛', why: '正文还在闲逛', picks: [1], labels: ['旧城区的传言'], total: 2, at: Date.now() };
+  api.app.openSettingsWindow('pool');
+  await wait(600);
+
+  const winText = document.querySelector('.bg-win-body')?.textContent ?? '';
+  window.__probe('【线索池栏：索引与定位】');
+  window.__probe('  ⭐ 标出这是索引 = ' + (/索引/.test(winText) ? '✅ 是' : '❌ 否'));
+  window.__probe('  ⭐ 显示她判断的阶段 = ' + (/刚到王都，还在街上闲逛/.test(winText) ? '✅ 是' : '❌ 否'));
+  window.__probe('  ⭐ 显示她挑了哪几条 = ' + (/旧城区的传言/.test(winText) ? '✅ 是' : '❌ 否'));
+  window.__probe('  能看出从几条里挑的 = ' + (/2 条/.test(winText) ? '✅ 是' : '❌ 否'));
+  const rows = document.querySelectorAll('.bg-poolrow').length;
+  window.__probe('  索引池子渲染出 ' + rows + ' 行 = ' + (rows === 2 ? '✅ 对' : '❌ 不对'));
+
+  window.__stage = 'pool';
+  window.__ready = true;
+  window.__calls = calls;
+} else if (shot === 'manual') {
+  // 场景 D：手动挑条目（用户要的保底路径）
+  //
+  // 验收重点：**完全不依赖 AI** 也能建起线索池，而且产出结构与 AI 那条路一致。
+  api.app.settings.llm.profileId = null; // 故意不配通道，证明这条路不需要 AI
+  api.app.settings.worldbook.bookNames = ['Re从零开始的世界书'];
+
+  const collected = await api.app.prepareScanCandidates();
+  window.__probe('【手动路径（故意不配辅助 API）】');
+  window.__probe('  读到候选 = ' + collected.candidates.length + ' 条');
+  window.__probe('  候选标题 = ' + JSON.stringify(collected.candidates.map((c) => c.comment)));
+  window.__probe('  ⭐ 无标签条目也在候选里 = ' +
+    (collected.candidates.some((c) => !/^[[【（(]/.test(String(c.comment)))) ? '✅ 是' : '❌ 否');
+  window.__probe('  剧透条目被排除 = ' +
+    (collected.candidates.some((c) => String(c.comment).includes('魔女教')) ? '❌ 混进来了' : '✅ 没混进来'));
+
+  // 手动勾选第 1、2 条（模拟用户点勾选框）
+  const picked = await api.app.buildHookPoolFromPicks(collected.candidates, [1, 2]);
+  window.__probe('  建池结果 = ' + (picked.ok ? '✅ 成功' : '❌ ' + picked.error));
+  if (picked.ok) {
+    window.__probe('  池子内容 = ' + JSON.stringify(picked.hooks.map((h) => h.label)));
+    const h0 = picked.hooks[0];
+    window.__probe('  ⭐ 结构字段齐全 = ' +
+      (['book', 'uid', 'label', 'content', 'kind', 'why'].every((k) => k in h0) ? '✅ 是' : '❌ 缺字段'));
+  }
+  window.__probe('  currentHookPool 能读到 = ' + api.app.currentHookPool().hooks.length + ' 条');
+  window.__probe('  ⭐ state().hookPool = ' + JSON.stringify(api.app.state().hookPool));
+
+  // 把这个池子拿去引导一次，证明下游完全不区分来源
+  api.app.settings.llm.profileId = 'p-fast';
+  const outcome = await api.app.askNow({ force: true });
+  window.__probe('  ⭐ 池子能直接喂给引导 = ' + (outcome?.ok ? '✅ 是' : '❌ ' + outcome?.error));
+  window.__probe('  引导请求数 = ' + calls.filter((c) => c.kind === 'guide').length);
+
+  window.__stage = 'manual';
+  window.__ready = true;
+  window.__calls = calls;
+} else if (shot === 'tauri') {
+  // 场景 E：还原 TauriTavern 的 `getContext()` 形状
+  //
+  // 用户实测报过「建立失败：拿不到角色卡标识（可能还没选卡）」，
+  // 而他明明选着卡。根因是不同酒馆实现给出的 ctx 形状不一致 ——
+  // 有的不把 `characters` 透进上下文。
+  //
+  // 这里把 `characters` 和 `characterId` 都拿掉，只留 `name2`，
+  // 验证插件仍然能认出「是哪张卡」并把池子建起来。
+  delete ctx.characters;
+  delete ctx.characterId;
+
+  api.app.settings.llm.profileId = 'p-fast';
+  api.app.settings.cadence.mode = 'always';
+
+  window.__probe('【TauriTavern 形状：ctx 里没有 characters / characterId】');
+  const st = api.app.state();
+  window.__probe('  认出的卡 = ' + st.identity.key);
+  window.__probe('  来源 = ' + st.identity.from);
+  window.__probe('  探测过程 = ' + st.identity.tried);
+  window.__probe('  ⭐ 没有 characters 也能认出卡 = ' + (st.identity.key ? '✅ 是' : '❌ 认不出来'));
+
+  const built = await api.app.buildHookPool({ force: true });
+  window.__probe('  建池结果 = ' + (built.ok ? '✅ 成功' : '❌ ' + built.error));
+  if (built.ok) {
+    window.__probe('  挑了 ' + built.hooks.length + ' 条');
+    window.__probe('  ⭐ 池子真的存进去了 = ' +
+      (api.app.currentHookPool().hooks.length ? '✅ 是（' + api.app.currentHookPool().hooks.length + ' 条）' : '❌ 存不进去'));
+  }
+
+  // 再跑一轮完整引导，确认下游也正常。流程与主场景一致
+  //（少了 addOneMessage / emitAndWait 就拿不到 DOM 节点，会得到假失败）
+  calls.length = 0;
+  await ctx.eventSource.emit('GENERATION_AFTER_COMMANDS', 'normal', {}, false);
+  await wait(250);
+  const aiIdx = ctx.chat.length;
+  ctx.chat.push({
+    name: '爱蜜莉雅',
+    is_user: false,
+    is_system: false,
+    mes: '你沿着主街走着，晚风里混着烤面包的味道。远处有人在收摊。',
+  });
+  await ctx.addOneMessage(ctx.chat[aiIdx]);
+  await wait(150);
+  await ctx.eventSource.emitAndWait('generation_ended');
+  for (let i = 0; i < 60; i++) {
+    if (ctx.chat[aiIdx]?.extra?.display_text) break;
+    await wait(100);
+  }
+  await wait(400);
+
+  const node = document.querySelector(`#chat .mes[mesid="${aiIdx}"] .mes_text`);
+  const shown = node ? node.textContent : '';
+  window.__probe('  ⭐ 正文末尾接上了吗 = ' + (shown.includes('贝翠丝：') ? '✅ 有' : '❌ 没有'));
+  window.__probe('  mes 未被改动 = ' + (String(ctx.chat[aiIdx].mes).includes('贝翠丝：') ? '❌ 被改了' : '✅ 干净'));
+
+  window.__stage = 'tauri';
+  window.__ready = true;
+  window.__calls = calls;
+} else {
+  //   1. 世界书**没有标签**时，AI 也能挑出剧情条目（线索池能建起来）
+  //   2. 她的话真的接进正文末尾
+  api.app.settings.llm.profileId = 'p-fast';
+  api.app.settings.cadence.mode = 'always';
+  // 夹具里只有 4 条世界书条目，够不到 auto 的阈值（默认 12 条）。
+  // 但这里**就是要验证定位那一步**，所以强制打开。
+  api.app.settings.guidance.locate = 'on';
+
+  // ── 第一步：让 AI 通读世界书，建立线索池 ────────────────────────────
+  const built = await api.app.buildHookPool({ force: true });
+  window.__probe('【通读世界书】');
+  window.__probe('  结果 = ' + (built.ok ? '✅ 成功' : '❌ ' + built.error));
+  if (built.ok) {
+    window.__probe('  挑了 ' + built.hooks.length + ' 条：' +
+      JSON.stringify(built.hooks.map((h) => (h.kind || '') + ':' + h.label)));
+    window.__probe('  ⭐ 无标签条目也能被选中 = ' + (built.hooks.some((h) => !/^[[【（(]/.test(h.label)) ? '✅ 是' : '❌ 否'));
+    window.__probe('  ⭐ 剧透条目被排除 = ' + (built.hooks.some((h) => h.label.includes('魔女教')) ? '❌ 混进来了' : '✅ 没混进来'));
+  }
+  window.__probe('  通读请求数 = ' + calls.filter((c) => c.kind === 'index' || c.kind === 'scan').length);
+
+  // ── 第二步：跑一轮引导 + 接正文 ─────────────────────────────────────
+  //
+  // ⚠️ 顺序必须还原真实流程：**先生成开始，正文再进数组**。
+  // 反过来的话，插件的「基准下标」会被算成新正文自己，于是永远等不到
+  // 「更新的那条」—— 那是夹具的问题，不是插件的问题（真实酒馆就是这个顺序）。
+  calls.length = 0;
+  await ctx.eventSource.emit('GENERATION_AFTER_COMMANDS', 'normal', {}, false);
+  await wait(250);
+  window.__probe('  生成期间发了引导请求吗 = ' +
+    (calls.filter((c) => c.kind === 'guide').length === 0 ? '✅ 没有（对的）' : '❌ 发了（模型看不到正文）'));
+
+  const aiIdx = ctx.chat.length;
+  ctx.chat.push({
+    name: '爱蜜莉雅',
+    is_user: false,
+    is_system: false,
+    mes: '你沿着主街走着，傍晚的风里混着烤面包的味道。远处有人在收摊。',
+  });
+  await ctx.addOneMessage(ctx.chat[aiIdx]);
+  await wait(150);
+  await ctx.eventSource.emitAndWait('generation_ended');
+  // 等注入真正落地（异步：等目标消息 → 注入 → 落盘）
+  for (let i = 0; i < 60; i++) {
+    if (ctx.chat[aiIdx]?.extra?.display_text) break;
+    await wait(100);
+  }
+  await wait(400);
+
+  // 【验收探针】楼层里到底有没有她的话
+  const node = document.querySelector(`#chat .mes[mesid="${aiIdx}"] .mes_text`);
+  const shown = node ? node.textContent : '';
+  window.__probe('【正文末尾引导】');
+  window.__probe('  楼层里有她的话吗 = ' + (shown.includes('贝翠丝：') ? '✅ 有' : '❌ 没有'));
+  window.__probe('  楼层文本尾部 = ' + JSON.stringify(shown.slice(-46)));
+  window.__probe('  mes 未被改动 = ' + (String(ctx.chat[aiIdx].mes).includes('贝翠丝：') ? '❌ 被改了' : '✅ 干净'));
+  window.__probe('  上次注入去向 = ' + JSON.stringify(window.BeatriceGuide.app.state().lastInjected ?? ''));
+
+  // 【验收探针】这次引导有没有用上线索池
+  const guideCall = calls.find((c) => c.kind === 'guide');
+  const guideUser = guideCall ? String(guideCall.messages.find((m) => m.role === 'user')?.content ?? '') : '';
+  window.__probe('【引导请求】');
+  window.__probe('  引导请求数 = ' + calls.filter((c) => c.kind === 'guide').length);
+  window.__probe('  提示词里带了线索 = ' + (guideUser.includes('旧城区的传言') || guideUser.includes('下水道') ? '✅ 有' : '❌ 没有'));
+  window.__probe('  ⭐ 提示词里带了刚写完的正文全文 = ' + (guideUser.includes('远处有人在收摊') ? '✅ 有' : '❌ 没有'));
+  window.__probe('  ⭐ 正文标成了「刚刚写完的正文」= ' + (guideUser.includes('刚刚写完的正文') ? '✅ 是' : '❌ 否'));
+  window.__probe('  气泡文本 = ' + JSON.stringify((document.querySelector('.bg-bubble-body')?.textContent ?? '').slice(0, 40)));
+
+  // 【验收探针】两段式的第一段：定位
+  //
+  // 这一步是整次改动的**理由**——旧设计在通读时就把「没用的」淘汰掉了，
+  // 而通读时根本不知道剧情演到哪。这里要证明：定位拿到了正文、拿到了索引，
+  // 并且它挑出来的条目**真的带了正文**进了引导提示词。
+  const locateCall = calls.find((c) => c.kind === 'locate');
+  const st = window.BeatriceGuide.app.state();
+  window.__probe('【两段式：定位】');
+  window.__probe('  定位请求数 = ' + calls.filter((c) => c.kind === 'locate').length);
+  if (locateCall) {
+    const locUser = String(locateCall.messages.find((m) => m.role === 'user')?.content ?? '');
+    window.__probe('  ⭐ 定位看得到刚写完的正文 = ' + (locUser.includes('远处有人在收摊') ? '✅ 有' : '❌ 没有'));
+    window.__probe('  ⭐ 定位看得到整份索引 = ' +
+      (locUser.includes('有人说夜里有人搬箱子') && locUser.includes('纵横的水道') ? '✅ 有' : '❌ 没有'));
+    window.__probe('  ⭐ 索引是「每条一行」的清单 = ' +
+      (/^\d+\. /m.test(locUser) ? '✅ 是' : '❌ 否'));
+  } else {
+    window.__probe('  ⚠️ 这一步没跑（索引条数少于阈值？检查 guidance.locate / locateMinHooks）');
+  }
+  window.__probe('  她判断出的阶段 = ' + JSON.stringify(st.located?.phase ?? ''));
+  window.__probe('  定位挑了几条 = ' + JSON.stringify(st.located?.picks ?? []));
+  window.__probe('  ⭐ 挑中的条目正文真的进了提示词 = ' +
+    // ⚠️ 判据必须用**只有世界书正文里才有**的句子。
+    // 索引的 brief 里也提到「搬箱子」，用它当判据会永远为真 ——
+    // 那样的断言等于没断言（第一次写就是这么写的，白高兴一场）。
+    (guideUser.includes('白天却什么痕迹都没有') ? '✅ 是' : '❌ 否'));
+  // 反向对照：没被挑中的条目**仍以索引摘要的形式**留在提示词里当兜底。
+  // 这正是索引模式与旧筛选模式的分界 —— 旧模式里没被挑中的条目直接消失了。
+  window.__probe('  ⭐ 没挑中的条目仍以摘要形式留着兜底 = ' +
+    (guideUser.includes('王都地下有纵横的水道') ? '✅ 是' : '❌ 否'));
+  window.__probe('  ⭐ 但它的正文没有被白送进去 = ' +
+    (guideUser.includes('很少有人知道这条捷径') ? '❌ 送进去了（提示词会变胖）' : '✅ 没有（只给摘要）'));
+  window.__probe('  ⭐ 池子记着「这是索引不是筛选结果」= ' + (st.hookPool?.indexed ? '✅ 是' : '❌ 否'));
+  window.__probe('  池子条数 = ' + (st.hookPool?.count ?? '?'));
+
+  window.__stage = 'final';
+  window.__ready = true;
+  window.__calls = calls;
+}
+</script>
+</body>
+</html>

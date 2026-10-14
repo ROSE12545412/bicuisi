@@ -1,0 +1,31 @@
+{
+  "name": "beatrice-guide",
+  "version": "1.1.0",
+  "description": "碧翠丝的禁书库 —— SillyTavern / TauriTavern 扩展：读世界书剧情钩子，用独立辅助 API 生成自然铺垫式的剧情引导与吐槽，以悬浮窗精灵的形象陪伴聊天。",
+  "type": "module",
+  "private": false,
+  "license": "MIT",
+  "author": "ROSE12545412",
+  "keywords": [
+    "sillytavern",
+    "sillytavern-extension",
+    "tauritavern",
+    "roleplay",
+    "world-info",
+    "lorebook",
+    "story-guide"
+  ],
+  "scripts": {
+    "check": "node scripts/check-syntax.js",
+    "test": "node test/run.js",
+    "test:native": "node --test test/",
+    "smoke": "node test/smoke-boot.js",
+    "render": "node _render/serve.js 8791",
+    "verify": "node scripts/check-syntax.js && node test/run.js && node test/smoke-boot.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {},
+  "devDependencies": {}
+}

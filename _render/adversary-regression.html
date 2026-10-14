@@ -1,0 +1,21 @@
+<!doctype html><meta charset="utf-8"><link rel="stylesheet" href="../style.css"><style>body{background:#16151e;color:white;font-family:system-ui}#result{white-space:pre-wrap}</style><pre id="result"></pre><script type="module">
+import {defaultSettings} from '../src/config.js';
+import {GuideController} from '../src/app.js';
+import {createSettingsWindow} from '../src/ui/panel.js';
+import {LlmClient} from '../src/llm/client.js';
+const log=document.querySelector('#result');let passed=0;const check=(ok,name)=>{log.textContent+=(ok?'PASS ':'FAIL ')+name+'\n';if(!ok)throw Error(name);passed++};
+try{
+const s=defaultSettings();s.realm='void';s.adversary.enabled=true;const prompts=[];let saves=0;
+const ctx={name2:'test actor',chatId:'browser',chatMetadata:{},chat:[{is_user:true,mes:'我走进大厅'},{mes:'商人站在大厅，门锁损坏。'}],setExtensionPrompt:(...args)=>prompts.push(args),saveMetadata:async()=>saves++,extensionSettings:{}};
+const app=new GuideController(ctx,s);app.ui={say:()=>{}};let count=0;
+LlmClient.prototype.complete=async()=>{count++;return {ok:true,text:JSON.stringify({proposals:[{type:'plan',plotId:'secret1',stage:'planned',plan:{objective:'HIDDEN_PLOT_SENTINEL',traceObjective:'门把手出现划痕',apprentice:{name:'商人',introduce:false,evidence:[{index:1,quote:'商人站在大厅',conditionId:''}]},conditions:[{id:'lock',event:'门锁关闭',counter:'拆除门锁'}]},evidence:[]}],commentary:'SECRET_MODEL_COMMENT',emotion:'smile'})}};
+const win=createSettingsWindow({app});document.body.append(win.node);win.open('adversary');
+check(!win.node.textContent.includes('HIDDEN_PLOT_SENTINEL'),'spoilers initially hidden');
+const before=JSON.stringify(ctx.chat);const out=await app.runPostGeneration();check(out.ok&&count===1,'one post prose observation');check(JSON.stringify(ctx.chat)===before,'prose unchanged');check(saves===1,'ledger persisted');check(prompts.at(-1)[1].includes('HIDDEN_PLOT_SENTINEL'),'next director contains plan');
+win.close();win.open('adversary');check(!win.node.textContent.includes('HIDDEN_PLOT_SENTINEL'),'closed/reopened remains spoiler hidden');
+const spoiler=[...win.node.querySelectorAll('input[type=checkbox]')].at(-1);spoiler.checked=true;spoiler.dispatchEvent(new Event('change'));check(win.node.textContent.includes('HIDDEN_PLOT_SENTINEL'),'explicit spoiler reveals ledger');
+win.close();check(!win.node.textContent.includes('HIDDEN_PLOT_SENTINEL'),'closing wipes revealed DOM');
+s.realm='beatrice';app.syncAdversaryDirector();check(prompts.at(-1)[1]==='','realm return clears director');s.realm='void';ctx.chat[1].mes='新的分支';app.syncAdversaryDirector();check(app.adversaryState().plots.length===0,'edit rolls back ledger');
+win.open('adversary');log.textContent+='TOTAL '+passed+' PASS\n';document.title='ADVERSARY PASS '+passed;
+}catch(e){log.textContent+='ERROR '+e.stack;document.title='ADVERSARY FAIL';}
+</script>

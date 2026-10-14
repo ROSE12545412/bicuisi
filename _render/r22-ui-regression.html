@@ -1,0 +1,22 @@
+<!doctype html><meta charset="utf-8"><link rel="stylesheet" href="../style.css"><button id="opener">Open</button><pre id="results">RUNNING</pre><script type="module">
+import {defaultSettings} from '../src/config.js';
+import {createSettingsWindow,buildDiagnostics} from '../src/ui/panel.js';
+import {LlmClient} from '../src/llm/client.js';
+const lines=[],result=document.querySelector('#results');
+function check(name,ok){lines.push(`${ok?'PASS':'FAIL'} ${name}`);result.textContent=lines.join('\n');if(!ok)throw Error(name);}
+const app={settings:defaultSettings(),ctx:{},persistSettings(){},log(){},channelStatus:()=>({ready:true}),state:()=>({lastError:'Bearer leaked-secret',story:'PRIVATE STORY'}),isBusy:()=>false};
+app.settings.llm.mode='custom';app.settings.llm.custom.url='https://one.example/v1';app.settings.llm.custom.model='private-model';
+let win;
+try {
+ const opener=document.querySelector('#opener');opener.focus();win=createSettingsWindow({app});win.open('llm');document.body.appendChild(win.node);
+ const pass=win.node.querySelector('input[type=password]');pass.focus();
+ for(const ch of 'abcdef'){pass.value+=ch;pass.dispatchEvent(new Event('input',{bubbles:true}));check('逐字输入保留焦点 '+ch,document.activeElement===pass&&pass.isConnected);}
+ check('密钥已保存',app.settings.llm.custom.key==='abcdef');
+ check('模态窗口可访问名称',win.node.querySelector('[role=dialog]')?.getAttribute('aria-modal')==='true'||win.node.getAttribute('role')==='dialog');
+ LlmClient.fetchModels=async()=>({ok:true,models:['public-model']});
+ [...win.node.querySelectorAll('button')].find(n=>n.textContent==='🔄 拉取模型').click();await new Promise(r=>setTimeout(r,100));
+ check('保留自定义部署名称',app.settings.llm.custom.model==='private-model');
+ const report=JSON.stringify(buildDiagnostics(app));check('公开诊断不含剧情或密钥',!report.includes('PRIVATE STORY')&&!report.includes('abcdef')&&!report.includes('leaked-secret'));
+ win.close();check('关闭恢复打开者焦点',document.activeElement===opener);result.dataset.result='passed';
+}catch(e){result.textContent+='\n'+e.stack;result.dataset.result='failed';}
+</script>

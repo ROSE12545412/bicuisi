@@ -1,0 +1,71 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="200" height="200" role="img" aria-hidden="true" focusable="false">
+  <title>Q 版贝翠丝</title>
+  <defs>
+    <radialGradient id="bg-hair-glow" cx="50%" cy="42%" r="58%">
+      <stop offset="0%" stop-color="#fbe6ac"/>
+      <stop offset="55%" stop-color="#f2cd6b"/>
+      <stop offset="100%" stop-color="#cb9427"/>
+    </radialGradient>
+    <linearGradient id="bg-dress" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#443a6b"/>
+      <stop offset="60%" stop-color="#2a2447"/>
+      <stop offset="100%" stop-color="#171331"/>
+    </linearGradient>
+    <filter id="bg-soft" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur stdDeviation="6"/>
+    </filter>
+  </defs>
+
+  <ellipse cx="100" cy="104" rx="74" ry="70" fill="#f2cd6b" opacity="0.3" filter="url(#bg-soft)"/>
+
+  <path d="M100 8 C58 8 40 38 40 74 C40 114 60 146 100 146 C140 146 160 114 160 74 C160 38 142 8 100 8 Z" fill="url(#bg-hair-glow)"/>
+
+  <path d="M42 72 C30 102 32 136 40 168 C44 184 58 184 60 168 C64 142 58 112 56 84 Z" fill="#e0a93a"/>
+  <path d="M158 72 C170 102 168 136 160 168 C156 184 142 184 140 168 C136 142 142 112 144 84 Z" fill="#e0a93a"/>
+  <path d="M44 152 C36 158 36 168 44 172 C54 176 64 168 60 158 C58 150 48 148 44 152 Z" fill="#e0a93a"/>
+  <path d="M156 152 C164 158 164 168 156 172 C146 176 136 168 140 158 C142 150 152 148 156 152 Z" fill="#e0a93a"/>
+
+  <path d="M70 36 C72 28 76 24 80 24 C86 24 88 30 86 40 C84 50 78 58 76 66 C72 58 68 44 70 36 Z" fill="#f7dc92"/>
+  <path d="M132 38 C134 30 138 26 142 26 C148 26 148 34 146 44 C144 54 138 60 136 68 C132 60 130 46 132 38 Z" fill="#f7dc92"/>
+
+  <path d="M62 88 C56 100 60 116 66 126 C70 118 70 104 68 92 Z" fill="#e0a93a"/>
+  <path d="M138 88 C144 100 140 116 134 126 C130 118 130 104 132 92 Z" fill="#e0a93a"/>
+  <path d="M48 72 C42 86 44 98 50 106 C54 98 52 84 54 74 Z" fill="#efc25a"/>
+  <path d="M152 72 C158 86 156 98 150 106 C146 98 148 84 146 74 Z" fill="#efc25a"/>
+
+  <circle cx="100" cy="74" r="44" fill="#fff2dd"/>
+  <ellipse cx="70" cy="94" rx="10" ry="6" fill="#f5a3b0" opacity="0.55"/>
+  <ellipse cx="130" cy="94" rx="10" ry="6" fill="#f5a3b0" opacity="0.55"/>
+
+  <path d="M100 8 C58 8 40 38 40 74 C40 96 48 116 62 130 C58 104 60 74 76 56 C88 42 112 42 124 56 C140 74 142 104 138 130 C152 116 160 96 160 74 C160 38 142 8 100 8 Z" fill="#f7dc92"/>
+
+  <path d="M74 64 C82 52 118 52 126 64 C116 58 84 58 74 64 Z" fill="#e0a93a" opacity="0.65"/>
+
+  <ellipse cx="82" cy="80" rx="11" ry="13" fill="#dceaff"/>
+  <ellipse cx="118" cy="80" rx="11" ry="13" fill="#dceaff"/>
+  <ellipse cx="82" cy="81" rx="9" ry="11" fill="#4a86d8"/>
+  <ellipse cx="118" cy="81" rx="9" ry="11" fill="#4a86d8"/>
+  <ellipse cx="82" cy="83" rx="5" ry="7" fill="#1c3f77"/>
+  <ellipse cx="118" cy="83" rx="5" ry="7" fill="#1c3f77"/>
+  <circle cx="78" cy="76" r="3.5" fill="#ffffff"/>
+  <circle cx="114" cy="76" r="3.5" fill="#ffffff"/>
+  <circle cx="86" cy="87" r="1.8" fill="#ffffff" opacity="0.85"/>
+  <circle cx="122" cy="87" r="1.8" fill="#ffffff" opacity="0.85"/>
+  <path d="M70 67 C76 62 88 62 93 66 C86 65 74 65 70 67 Z" fill="#b0842a"/>
+  <path d="M130 67 C124 62 112 62 107 66 C114 65 126 65 130 67 Z" fill="#b0842a"/>
+
+  <path d="M92 96 C96 92 104 92 108 96 C106 103 94 103 92 96 Z" fill="#b96a6a"/>
+  <path d="M75 142 C86 124 114 124 125 142 C110 136 90 136 75 142 Z" fill="#ffffff"/>
+  <circle cx="75" cy="133" r="8" fill="#ffffff"/>
+  <circle cx="125" cy="133" r="8" fill="#ffffff"/>
+  <path d="M100 146 C82 155 66 161 64 168 C80 176 120 176 136 168 C134 161 118 155 100 146 Z" fill="url(#bg-dress)"/>
+  <path d="M82 189 C82 181 92 178 98 182 C102 185 102 189 99 191 C93 194 85 194 82 189 Z" fill="#413a63"/>
+  <path d="M118 189 C118 181 108 178 102 182 C98 185 98 189 101 191 C107 194 115 194 118 189 Z" fill="#413a63"/>
+  <path d="M100 146 C82 155 66 161 64 168 C74 176 90 180 100 180 C110 180 126 176 136 168 C134 161 118 155 100 146 Z" fill="url(#bg-dress)"/>
+  <path d="M100 169 C90 169 80 171.5 74 175 C82 179 91 180 100 180 C109 180 118 179 126 175 C120 171.5 110 169 100 169 Z" fill="#f2cd6b" opacity="0.85"/>
+
+  <path d="M78 24 C86 18 104 16 120 20 C106 20 92 22 82 28 Z" fill="#ffffff" opacity="0.6"/>
+  <path d="M130 14 C134 6 141 3 146 7 C151 11 148 18 142 18 C146 22 143 29 137 27 C142 31 139 37 133 34 C136 38 131 42 126 37 C129 33 126 26 130 22 C133 18 129 16 130 14 Z" fill="#eef3ff" stroke="#8ea6e0" stroke-width="2.4" stroke-linejoin="round"/>
+  <path d="M131 17 C134 12 139 11 142 14 C145 17 142 21 138 21 C140 25 138 29 134 28 C136 32 132 34 129 30 C131 27 129 22 131 19 Z" fill="#8fb4ee" opacity="0.75"/>
+  <circle cx="136" cy="21" r="2.6" fill="#3d5fae"/>
+</svg>

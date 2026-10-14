@@ -1,0 +1,31 @@
+<!doctype html><meta charset="utf-8"><link rel="stylesheet" href="../style.css"><style>body{background:#16151e;color:white;font-family:system-ui}#result{white-space:pre-wrap}</style><pre id="result"></pre><script type="module">
+import {defaultSettings} from '../src/config.js';
+import {GuideController} from '../src/app.js';
+import {createSettingsWindow} from '../src/ui/panel.js';
+import {recordGuidance,syncDiaryFromFacts} from '../src/memories.js';
+const log=document.querySelector('#result');let passed=0;const check=(ok,name)=>{log.textContent+=(ok?'PASS ':'FAIL ')+name+'\n';if(!ok)throw Error(name);passed++};
+try {
+const settings=defaultSettings();let saves=0;
+const ctx={name2:'旅人',chatId:'memories-browser',chatMetadata:{},chat:[{is_user:true,mes:'我推门。'},{mes:'旅人推开门，门已经打开。'}],saveMetadata:async()=>saves++,extensionSettings:{}};
+const app=new GuideController(ctx,settings);
+recordGuidance(ctx,{index:1,realm:'beatrice',guidance:'<img src=x onerror=alert(1)> 记住门后的风。',commentary:'贝蒂可不是担心你。',sources:[{book:'秘密原典',uid:1,content:'SOURCE_SECRET_SENTINEL'}]});
+syncDiaryFromFacts(ctx,[{id:'door',actor:'旅人',action:'推开门',result:'门已打开',status:'confirmed',evidence:[{index:1,quote:'门已经打开'}]}]);
+app.memoryState=()=>syncDiaryFromFacts(ctx,[{id:'door',actor:'旅人',action:'推开门',result:'门已打开',status:'confirmed',evidence:[{index:1,quote:'门已经打开'}]}]);
+const win=createSettingsWindow({app});document.body.append(win.node);win.open('memories');
+const button=text=>[...win.node.querySelectorAll('button')].find(n=>n.textContent===text);
+const changeLabel=(text,value)=>{const label=[...win.node.querySelectorAll('span')].find(n=>n.textContent===text&&n.id);const input=win.node.querySelector(`input[aria-labelledby="${label.id}"]`);input.checked=value;input.dispatchEvent(new Event('change'));};
+const settle=()=>new Promise(r=>setTimeout(r,30));
+check(win.node.textContent.includes('门已打开'),'confirmed diary visible');
+check(!win.node.textContent.includes('SOURCE_SECRET_SENTINEL'),'source hidden initially');
+check(!win.node.querySelector('img[src=x]'),'untrusted reminder is text not HTML');
+button('☆ 加为重要书签').click();await settle();check(app.memoryState().reminders[0].bookmarked&&saves===1,'bookmark persists');
+changeLabel('显示提醒原始来源（可能剧透，仅本窗口）',true);
+const expand=[...win.node.querySelectorAll('button')].find(n=>n.textContent.includes('来源'));expand.click();await settle();check(win.node.textContent.includes('SOURCE_SECRET_SENTINEL'),'explicit double source consent reveals snapshot');
+win.close();win.open('memories');check(!win.node.textContent.includes('SOURCE_SECRET_SENTINEL'),'reopening resets source consent');
+button('移除 / 忘记这条日记').click();await settle();check(app.memoryState().diary.length===1,'first forget click only confirms');
+button('取消删除').click();await settle();check(app.memoryState().diary.length===1,'cancel preserves diary');
+ctx.chat[1].mes='新的分支。';check(app.memoryState().reminders.length===0,'edit invalidates old reminder');
+win.close();win.open('memories');check(!win.node.textContent.includes('记住门后的风'),'old branch gone from reopened UI');
+log.textContent+='TOTAL '+passed+' PASS\n';document.title='MEMORIES PASS '+passed;
+}catch(e){log.textContent+='ERROR '+e.stack;document.title='MEMORIES FAIL';}
+</script>

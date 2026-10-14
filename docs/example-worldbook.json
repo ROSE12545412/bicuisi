@@ -1,0 +1,163 @@
+{
+  "name": "碧翠丝的禁书库 · 示例线索（无需标签）",
+  "description": "给「碧翠丝的禁书库」扩展用的示例世界书。导入后挂到任意角色卡上，就能立刻看到贝翠丝读线索的效果。每条条目的【标题】都在示范一种标签写法 —— 照着自己的世界书改即可。",
+  "extensions": {
+    "note": "只有【标题】里带白名单标签的条目会被读取。带 [禁止引导] 的绝不读取。"
+  },
+  "entries": {
+    "0": {
+      "uid": 0,
+      "comment": "[引导] 旧城区的夜半搬运　← 最常用写法：方括号写标签，名字跟在括号外",
+      "key": [
+        "旧城区",
+        "搬运",
+        "夜半"
+      ],
+      "keysecondary": [],
+      "content": "最近半个月，旧城区总有人在深夜往一辆没有标记的货车上搬箱子。箱子不重，但搬的人从不交谈，也不点灯。白天去看，那个仓库门口干干净净，连车辙都扫过了。\n\n住在附近的老人说，这种事上一次发生是在二十年前，那年冬天城里丢了七个孩子。",
+      "constant": false,
+      "selective": false,
+      "order": 100,
+      "position": 0,
+      "disable": false,
+      "addMemo": true,
+      "excludeRecursion": false,
+      "probability": 100,
+      "useProbability": true
+    },
+    "1": {
+      "uid": 1,
+      "comment": "[地点] 王都下水道 · 东段暗渠　← 中文方头括号也可以，地点也在白名单里",
+      "key": [
+        "下水道",
+        "暗渠",
+        "东段"
+      ],
+      "keysecondary": [],
+      "content": "王都的排水系统在三百年前扩建过一次，东段有一条暗渠图纸上不存在，从内城墙一直通到城外的枯河床。入口被一块刻着葡萄藤的石板盖住，石板边缘有被反复撬动的痕迹。\n\n空气里常年有一股铁锈味，越往里走越浓。",
+      "constant": false,
+      "selective": false,
+      "order": 101,
+      "position": 0,
+      "disable": false,
+      "addMemo": true,
+      "excludeRecursion": false,
+      "probability": 100,
+      "useProbability": true
+    },
+    "2": {
+      "uid": 2,
+      "comment": "【线索】卖花的少女　← 三种括号都能识别：半角、方头、圆括号",
+      "key": [
+        "卖花",
+        "少女",
+        "花篮"
+      ],
+      "keysecondary": [],
+      "content": "广场东角总有个卖白花的少女，十四岁上下，从不叫卖。她记性极好，谁什么时候经过、和谁一起、往哪个方向走，她都能说出来 —— 只要给她一枚铜币，她就愿意聊。\n\n她左手手腕上有一道旧疤，形状像被绳子勒过。",
+      "constant": false,
+      "selective": false,
+      "order": 102,
+      "position": 0,
+      "disable": false,
+      "addMemo": true,
+      "excludeRecursion": false,
+      "probability": 100,
+      "useProbability": true
+    },
+    "3": {
+      "uid": 3,
+      "comment": "引导 - 钟楼多敲的三下　← 不用括号的前缀式写法；冒号顿号竖线斜杠当分隔符都行",
+      "key": [
+        "钟楼",
+        "钟声"
+      ],
+      "keysecondary": [],
+      "content": "城中心的钟楼由守钟人维护，规规矩矩敲了四十年。但每逢城里有大事要发生的前一夜，那口钟会在午夜之后多敲三下，没有人承认是自己敲的。\n\n守钟人对此闭口不谈，只说「那是钟自己记性不好」。",
+      "constant": false,
+      "selective": false,
+      "order": 103,
+      "position": 0,
+      "disable": false,
+      "addMemo": true,
+      "excludeRecursion": false,
+      "probability": 100,
+      "useProbability": true
+    },
+    "4": {
+      "uid": 4,
+      "comment": "[引导] 一封没有署名的委托　← 好线索只留可追查的痕迹，不写死「去哪里」",
+      "key": [
+        "委托",
+        "信件",
+        "无名"
+      ],
+      "keysecondary": [],
+      "content": "冒险者公会的留言板上钉着一封没有署名的委托，报酬异常丰厚，要求却只有一句：「在第七个夜晚之前，找到那扇不该存在的门，并且什么都不要问。」\n\n纸是上等的羊皮纸，墨迹里混着极淡的紫罗兰香 —— 这种墨只在贵族区的一家老店卖。委托已经挂了六天。",
+      "constant": false,
+      "selective": false,
+      "order": 104,
+      "position": 0,
+      "disable": false,
+      "addMemo": true,
+      "excludeRecursion": false,
+      "probability": 100,
+      "useProbability": true
+    },
+    "5": {
+      "uid": 5,
+      "comment": "[禁止引导] 二十年前的真相　← 剧透保护：写上这个前缀，扩展会完全跳过它",
+      "key": [
+        "二十年前",
+        "真相",
+        "第七个"
+      ],
+      "keysecondary": [],
+      "content": "二十年前失踪的七个孩子并没有死，他们被带去了一个不该存在的地方 —— 真正的答案应当等剧情推进到那个节点时再揭晓。\n\n把你世界书里所有「不能提前透露」的条目都加上 [禁止引导] 或 [剧透] 前缀。这条就是反面示范：它不会被读取。",
+      "constant": false,
+      "selective": false,
+      "order": 105,
+      "position": 0,
+      "disable": false,
+      "addMemo": true,
+      "excludeRecursion": false,
+      "probability": 100,
+      "useProbability": true
+    },
+    "6": {
+      "uid": 6,
+      "comment": "王都 · 世界设定（常量条目）　← 没标签，但蓝灯常量条目会作为兜底线索入选",
+      "key": [],
+      "keysecondary": [],
+      "content": "王都坐落于两条河流交汇处，人口约四十万。内城为贵族与王宫所在，外城是商业与居住区，旧城区则是三十年前大火后一直没有重建完的废墟带。\n\n城内治安由王都警备队维持，夜间宵禁从午夜持续到晨钟。",
+      "constant": true,
+      "selective": false,
+      "order": 10,
+      "position": 0,
+      "disable": false,
+      "addMemo": true,
+      "excludeRecursion": false,
+      "probability": 100,
+      "useProbability": true
+    },
+    "7": {
+      "uid": 7,
+      "comment": "一个没有标签的普通条目　← 默认不读取：纯背景设定会稀释线索池的重点",
+      "key": [
+        "路人",
+        "铁匠"
+      ],
+      "keysecondary": [],
+      "content": "铁匠铺的老爷子手艺很好，但脾气不好。\n\n这种纯背景设定对判断「下一步往哪走」没有帮助，所以不该占用辅助模型的 token，也不该混进线索池里。这条就是反面示范：它不会被读取。",
+      "constant": false,
+      "selective": false,
+      "order": 106,
+      "position": 0,
+      "disable": false,
+      "addMemo": true,
+      "excludeRecursion": false,
+      "probability": 100,
+      "useProbability": true
+    }
+  }
+}

@@ -1,0 +1,33 @@
+<!doctype html><meta charset="utf-8"><link rel="stylesheet" href="../style.css"><style>body{background:#222;color:#eee;font:18px sans-serif}.hidden{display:none}#results{white-space:pre-wrap}</style><div id="chat"><div class="mes" mesid="0"><div class="mes_block"><div class="mes_text hidden">正文</div><div class="TH-streaming"><iframe srcdoc="正文 iframe"></iframe></div></div></div></div><pre id="results">RUNNING</pre><script type="module">
+import {appendGuidanceToMessage,observeDisplayedGuidance,displayReport,patchUpdateMessageBlock,repairDisplayedGuidance} from '../src/inject.js';
+const results=document.querySelector('#results');const lines=[];const wait=ms=>new Promise(r=>setTimeout(r,ms));
+function check(name,ok){lines.push(`${ok?'PASS':'FAIL'} ${name}`);results.textContent=lines.join('\n');if(!ok)throw Error(name)}
+const msg={mes:'正文',name:'角色',extra:{}};let chat=[msg];const frame=document.querySelector('iframe');const text=document.querySelector('.mes_text');
+const ctx={chat,updateMessageBlock(){text.textContent='正文';},messageFormatting(){return '正文';}};
+patchUpdateMessageBlock(ctx);
+const stop=observeDisplayedGuidance(()=>({...ctx,chat}));
+try{
+appendGuidanceToMessage(ctx,0,{guidance:'贝蒂提醒你留意门外。'},{injection:{speakerName:'贝翠丝'}});await wait(160);
+check('隐藏正文+正则丢弃尾段时，引导仍可见',displayReport(ctx).onScreen===1);
+check('头像加载且替代姓名',document.querySelector('.bg-guidance-avatar')?.complete && document.querySelector('.bg-guidance-avatar')?.naturalWidth > 0 && !document.querySelector('.bg-guidance-content')?.textContent.includes('贝翠丝：'));
+check('不重建 iframe',frame===document.querySelector('iframe'));
+check('引导位于流式正文之后',document.querySelector('.TH-streaming').nextElementSibling?.className==='bg-inline-guidance');
+check('宿主诊断不再包含自己的兜底',displayReport(ctx).hostHonorsDisplay===false);
+appendGuidanceToMessage(ctx,0,{guidance:'嗨，门外的风声或许比你想的有趣。'},{realm:'void',injection:{speakerName:'贝翠丝'}});await wait(200);
+check('人神正文头像与主题切换',msg.extra.beatriceGuide.realm==='void' && document.querySelector('.bg-inline-guidance')?.dataset.bgRealm==='void' && document.querySelector('.bg-guidance-avatar')?.src.endsWith('/assets/hitogami.jpg') && document.querySelector('.bg-guidance-avatar')?.naturalWidth>0);
+check('人神仅显示自己的台词',msg.extra.display_text.includes('人神：') && !document.querySelector('.bg-guidance-content')?.textContent.includes('人神：'));
+appendGuidanceToMessage(ctx,0,{guidance:'贝蒂提醒你留意门外。'},{realm:'beatrice',injection:{speakerName:'贝翠丝'}});await wait(200);
+check('正文可以恢复碧翠丝头像',document.querySelector('.bg-guidance-avatar')?.src.endsWith('/assets/guidance-avatar.jpg') && msg.mes==='正文');
+await wait(16000);document.querySelector('.bg-inline-guidance').remove();await wait(200);
+check('超过15秒、无酒馆事件的覆盖仍能恢复',displayReport(ctx).onScreen===1);
+check('反复恢复没有重复尾段',document.querySelectorAll('.bg-inline-guidance').length===1);
+text.classList.remove('hidden');text.textContent=msg.extra.display_text;await wait(200);
+check('宿主自己显示引导后删除重复兜底',document.querySelectorAll('.bg-inline-guidance').length===0);
+text.textContent='正文';await wait(200);msg.mes='用户编辑后的正文';text.textContent=msg.mes;await wait(200);
+check('编辑正文后不恢复旧引导',!msg.extra.display_text && !document.querySelector('.bg-inline-guidance'));
+chat=[{mes:'另一聊天',extra:{}}];text.textContent='另一聊天';await wait(200);
+check('新聊天没有旧引导',!document.querySelector('.bg-inline-guidance'));
+stop();check('观察器清理',!displayReport(ctx).domObserverActive);
+results.dataset.result='passed';
+}catch(e){stop();results.textContent+='\n'+e.stack;results.dataset.result='failed';}
+</script>
