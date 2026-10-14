@@ -414,11 +414,9 @@ export function repairDisplayedGuidance(ctx, onlyIndex, { domOnly = false } = {}
             continue;
         }
 
-        const own = findDisplayTail(i);
-        const suffix = guidanceBody(msg).slice(-24).replace(/\s+/g, '');
-        // 宿主重新显示了完整引导时，撤掉我们的兜底，避免同一楼层重复两份。
-        if (own && visibleText(findMessageTextNode(globalThis.document, i)).includes(suffix)) own.remove?.();
-        if (isDisplayApplied(i, msg)) continue;
+        // Pure host-rendered text is not the themed avatar card. Reconcile only
+        // our exact rendered suffix, then keep the card through host rerenders.
+        if (isDisplayApplied(i, msg) && !hostTailRange(findMessageTextNode(globalThis.document, i), layer)) continue;
         if (domOnly ? restoreDisplayTail(i, msg) : rerenderMessage(ctx, i, msg)) fixed++;
     }
     return fixed;
@@ -474,6 +472,7 @@ function restoreDisplayTail(messageId, msg) {
     if (!node || !layer) return false;
     const text = layer.addition.trim();
     if (!text || !d?.createElement) return false;
+    removeHostTail(node, layer);
     let tail = findDisplayTail(messageId);
     if (!tail) {
         tail = d.createElement('div');
@@ -505,6 +504,53 @@ function restoreDisplayTail(messageId, msg) {
         else tail.textContent = spoken;
     }
     return isDisplayApplied(messageId, msg);
+}
+
+// Locate the complete owned suffix, never a matching sentence in the body.
+// Mapping text offsets lets us delete only that suffix without rebuilding HTML,
+// translated paragraphs, event handlers or streaming iframe nodes.
+function hostTailRange(node, layer) {
+    if (!node || !layer) return null;
+    const parts = [];
+    const visit = n => {
+        if (n.nodeType === 3) parts.push({ node: n, text: String(n.nodeValue ?? n.textContent ?? '') });
+        else for (const child of n.childNodes ?? []) visit(child);
+    };
+    visit(node);
+    const raw = parts.length ? parts.map(p => p.text).join('') : String(node.textContent ?? '');
+    let normalized = '', offsets = [];
+    for (let i = 0; i < raw.length; i++) if (!/\s/.test(raw[i])) { normalized += raw[i]; offsets.push(i); }
+    const suffix = layer.addition.replace(/\s+/g, '');
+    if (!suffix || !normalized.endsWith(suffix)) return null;
+    const start = offsets[normalized.length - suffix.length];
+    // Require the exact divider+speaker+full guidance, not a partial tail match.
+    return { parts, raw, start };
+}
+function removeHostTail(node, layer) {
+    const found = hostTailRange(node, layer);
+    if (!found) return false;
+    const d = globalThis.document;
+    if (found.parts.length && d?.createRange) {
+        let offset = 0;
+        const first = found.parts.find(p => {
+            const end = offset + p.text.length;
+            if (found.start < end) return true;
+            offset = end; return false;
+        });
+        if (!first) return false;
+        const last = found.parts.at(-1);
+        const range = d.createRange();
+        range.setStart(first.node, found.start - offset);
+        range.setEnd(last.node, last.text.length);
+        range.deleteContents();
+        return true;
+    }
+    // Minimal fake/legacy text-only nodes: never replace an element subtree.
+    if (!node.childNodes?.length && !node.children?.length) {
+        node.textContent = found.raw.slice(0, found.start).replace(/\s+$/, '');
+        return true;
+    }
+    return false;
 }
 
 function guidanceBody(msg) {
@@ -588,9 +634,9 @@ function rerenderMessage(ctx, messageId, msg) {
             render.call(ctx, messageId, msg, { rerenderMessage: true });
             // ⚠️ 不能因为「没抛异常」就认为成功：楼层不存在时它是空操作。
             //    所以下面用 DOM 校验一遍，真没上去就走兜底。
-            if (isDisplayApplied(messageId, msg)) {
+            if (hostTailRange(findMessageTextNode(globalThis.document, messageId), activeDisplayLayer(msg))) {
                 hostHonorsDisplay = true;
-                return true;
+                return restoreDisplayTail(messageId, msg);
             }
             // 楼层在、但内容不对 → 这个宿主不认 display_text（TauriTavern 实测如此）
             if (findMessageTextNode(/** @type {any} */ (globalThis)?.document, messageId)) {
@@ -686,7 +732,7 @@ export function watchDisplayedGuidance(ctx, messageId, opts = {}) {
                 const idx = Number(messageId);
                 const msg = ctx?.chat?.[idx];
                 if (!msg?.extra?.beatriceGuide || !msg.extra.display_text) return;
-                if (isDisplayApplied(idx, msg)) return;
+                if (isDisplayApplied(idx, msg) && !hostTailRange(findMessageTextNode(globalThis.document, idx), activeDisplayLayer(msg))) return;
                 watchRepairs += repairDisplayedGuidance(ctx, idx, { domOnly: true });
             } catch {
                 /* ignore */
@@ -861,10 +907,10 @@ function isDisplayApplied(messageId, msg) {
 
         const d = /** @type {any} */ (globalThis)?.document;
         const own = findDisplayTail(messageId);
-        if (own && visibleText(own).includes(tail)) return true;
-        const node = findMessageTextNode(d, messageId);
-        if (!node) return false;
-        return visibleText(node).includes(tail);
+        const realm = msg.extra.beatriceGuide?.realm === 'void' ? 'void' : 'beatrice';
+        if (own && own.getAttribute?.('data-bg-text') === `${realm}:${guidanceBody(msg)}` &&
+            own.getAttribute?.('data-bg-realm') === realm && visibleText(own).includes(tail)) return true;
+        return false; // Raw text alone is not a completed avatar card.
     } catch {
         return false;
     }

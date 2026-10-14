@@ -22,11 +22,22 @@ await wait(16000);document.querySelector('.bg-inline-guidance').remove();await w
 check('超过15秒、无酒馆事件的覆盖仍能恢复',displayReport(ctx).onScreen===1);
 check('反复恢复没有重复尾段',document.querySelectorAll('.bg-inline-guidance').length===1);
 text.classList.remove('hidden');text.textContent=msg.extra.display_text;await wait(200);
-check('宿主自己显示引导后删除重复兜底',document.querySelectorAll('.bg-inline-guidance').length===0);
+check('宿主显示完整文本时碧翠丝卡片仍保留且不重复',document.querySelectorAll('.bg-inline-guidance').length===1 && !text.textContent.includes('贝蒂提醒你留意门外。') && text.textContent.includes('正文'));
+check('碧翠丝卡片样式已生效',getComputedStyle(document.querySelector('.bg-inline-guidance')).display==='flex' && document.querySelector('.bg-guidance-avatar').naturalWidth>0);
+appendGuidanceToMessage(ctx,0,{guidance:'嗨，门外的风声或许比你想的有趣。'},{realm:'void'});text.textContent=msg.extra.display_text;await wait(200);
+check('宿主显示完整文本时人神卡片仍保留且不重复',document.querySelectorAll('.bg-inline-guidance').length===1 && document.querySelector('.bg-inline-guidance').dataset.bgRealm==='void' && !text.textContent.includes('嗨，门外的风声或许比你想的有趣。') && text.textContent.includes('正文'));
+check('人神头像与主题已生效',document.querySelector('.bg-guidance-avatar').naturalWidth>0 && getComputedStyle(document.querySelector('.bg-inline-guidance')).display==='flex');
+text.replaceChildren();const preserved=document.createElement('strong');preserved.textContent='正文';text.append(preserved,document.createElement('br'),document.createTextNode('──────────'),document.createElement('br'),document.createTextNode('人神：'),document.createElement('br'));const styled=document.createElement('em');styled.textContent='嗨，门外的风声或许比你想的有趣。';text.append(styled);await wait(200);
+check('格式化引导只清理自身尾段，正文节点不重建',text.querySelector('strong')===preserved && !text.textContent.includes('嗨，门外的风声或许比你想的有趣。') && document.querySelectorAll('.bg-inline-guidance').length===1);
+check('格式化宿主重渲染后 iframe 身份保持',frame===document.querySelector('iframe'));
+text.textContent='正文已有相同一句：嗨，门外的风声或许比你想的有趣。';await wait(200);
+check('正文自身相同语句不能被当成引导删掉',text.textContent==='正文已有相同一句：嗨，门外的风声或许比你想的有趣。' && document.querySelectorAll('.bg-inline-guidance').length===1);
 text.textContent='正文';await wait(200);msg.mes='用户编辑后的正文';text.textContent=msg.mes;await wait(200);
 check('编辑正文后不恢复旧引导',!msg.extra.display_text && !document.querySelector('.bg-inline-guidance'));
 chat=[{mes:'另一聊天',extra:{}}];text.textContent='另一聊天';await wait(200);
 check('新聊天没有旧引导',!document.querySelector('.bg-inline-guidance'));
+chat=[{mes:'独立正文',extra:{display_text:'其他插件译文'}}];text.textContent='其他插件译文';appendGuidanceToMessage({...ctx,chat},0,{guidance:'这是贝蒂的旁注。'},{realm:'beatrice'});await wait(100);chat[0].extra.display_text='第三方随后覆盖';text.textContent='第三方随后覆盖';await wait(200);
+check('其他插件后续覆盖保持完整且不留过期卡片',text.textContent==='第三方随后覆盖' && !document.querySelector('.bg-inline-guidance'));
 stop();check('观察器清理',!displayReport(ctx).domObserverActive);
 results.dataset.result='passed';
 }catch(e){stop();results.textContent+='\n'+e.stack;results.dataset.result='failed';}

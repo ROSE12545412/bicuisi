@@ -148,7 +148,7 @@ describe('repairDisplayedGuidance —— 数据里有、页面上没有', () => 
 
             assert.equal(n, 1, '应当修好一条');
             assert.ok(
-                floors.get(1).textContent.includes('今天街上的人都在往同一个方向走'),
+                displayReport(ctx).onScreen === 1 && globalThis.document.querySelector('#chat .mes[mesid="1"] .bg-inline-guidance').textContent.includes('今天街上的人都在往同一个方向走'),
                 '补回来之后页面上必须能看到她的话',
             );
         });
@@ -160,13 +160,29 @@ describe('repairDisplayedGuidance —— 数据里有、页面上没有', () => 
             const { ctx, calls } = fakeCtx(chat, { floors });
             floors.get(1).textContent = chat[1].extra.display_text;
 
+            assert.equal(repairDisplayedGuidance(ctx), 1, '纯文字须先转成头像卡片');
+            const before = calls.rerenders;
             const n = repairDisplayedGuidance(ctx);
 
             assert.equal(n, 0);
-            assert.equal(calls.rerenders, 0, '显示已经对了就不该再触发渲染');
+            assert.equal(calls.rerenders, before, '卡片显示已经对了就不该再触发渲染');
         });
     });
 
+    for (const realm of ['beatrice', 'void']) test(`${realm}: 宿主纯文字转成正确主题头像卡片，不删正文同句`, async () => {
+        await withDom([0], async floors => {
+            const msg = guidedMessage('正文里也有一句暗示', '一句暗示');
+            msg.extra.beatriceGuide.realm = realm;
+            const { ctx } = fakeCtx([msg], { floors });
+            floors.get(0).textContent = msg.extra.display_text;
+            assert.equal(repairDisplayedGuidance(ctx), 1);
+            const card = globalThis.document.querySelector('#chat .mes[mesid="0"] .bg-inline-guidance');
+            assert.equal(card.getAttribute('data-bg-realm'), realm);
+            assert.equal(floors.get(0).textContent, '正文里也有一句暗示');
+            assert.equal(repairDisplayedGuidance(ctx), 0);
+            assert.equal(displayReport(ctx).onScreen, 1);
+        });
+    });
     test('连跑两次不产生额外渲染（幂等）', async () => {
         await withDom([1], async (floors) => {
             const mes = '正文';
@@ -220,7 +236,7 @@ describe('repairDisplayedGuidance —— 数据里有、页面上没有', () => 
             const { ctx } = fakeCtx(chat, { floors });
 
             assert.equal(repairDisplayedGuidance(ctx, 2), 1);
-            assert.ok(floors.get(2).textContent.includes('暗示二'));
+            assert.ok(globalThis.document.querySelector('#chat .mes[mesid="2"] .bg-inline-guidance').textContent.includes('暗示二'));
             assert.equal(floors.get(1).textContent, '', '没点名的楼层不该被动');
         });
     });
@@ -260,6 +276,7 @@ describe('displayReport —— 「在数据里」和「在页面上」必须能�
         await withDom([1], async (floors) => {
             const chat = [null, guidedMessage('正文', '暗示')];
             floors.get(1).textContent = chat[1].extra.display_text;
+            repairDisplayedGuidance({ chat });
             const r = displayReport({ chat });
             assert.equal(r.inData, 1);
             assert.equal(r.onScreen, 1);
@@ -447,6 +464,7 @@ describe('watchDisplayedGuidance —— 没有任何事件时也要自己回头�
             const chat = [null, guidedMessage('正文', '暗示')];
             const { ctx } = hostileCtx(chat, { floors });
             floors.get(1).textContent = chat[1].extra.display_text;
+            repairDisplayedGuidance(ctx);
             const before = watchRepairCount();
 
             const stop = watchDisplayedGuidance(ctx, 1, { delays: [5, 15] });
