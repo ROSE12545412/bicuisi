@@ -1781,3 +1781,106 @@
 .bg-win-portrait[hidden] { display: none; }
 .bg-memories { display: grid; gap: 14px; min-width: 0; }
 .bg-ended-recap { display: grid; gap: 10px; min-width: 0; overflow-wrap: anywhere; }
+
+/* r37 · Settings-only realm palettes. Never recolor chat cards or avatars. */
+.bg-win-overlay {
+    --bg-ui-surface: #281f30;
+    --bg-ui-panel: #302538;
+    --bg-ui-field: #211b2a;
+    --bg-ui-text: #f5eaf0;
+    --bg-ui-muted: #cbbbc8;
+    --bg-ui-border: #69516c;
+    --bg-ui-accent: #efc98f;
+    --bg-ui-soft: #efc98f1c;
+    --bg-ui-primary: #f0cf9f;
+    --bg-ui-primary-text: #322033;
+    --bg-bubble-edge: var(--bg-ui-border);
+    --bg-bubble-fg: var(--bg-ui-text);
+    --bg-accent: var(--bg-ui-accent);
+    --bg-accent-soft: var(--bg-ui-soft);
+    color-scheme: dark;
+    background: radial-gradient(ellipse at 25% 15%, #5d354957, #100e1ccc 75%);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+}
+.bg-win-overlay[data-bg-realm='void'] {
+    --bg-ui-surface: #f5f7f9;
+    --bg-ui-panel: #ffffff;
+    --bg-ui-field: #ffffff;
+    --bg-ui-text: #303c49;
+    --bg-ui-muted: #5e6c7a;
+    --bg-ui-border: #bec8d2;
+    --bg-ui-accent: #506679;
+    --bg-ui-soft: #50667912;
+    --bg-ui-primary: #506579;
+    --bg-ui-primary-text: #ffffff;
+    --bg-bubble-edge: var(--bg-ui-border);
+    --bg-bubble-fg: var(--bg-ui-text);
+    --bg-accent: var(--bg-ui-accent);
+    --bg-accent-soft: var(--bg-ui-soft);
+    color-scheme: light;
+    background: radial-gradient(ellipse at 70% 20%, #ffffffec, #d9e0e7de 85%);
+}
+.bg-win-overlay .bg-win-card {
+    width: min(980px, 100%);
+    min-width: 0;
+    max-width: 100%;
+    border: 1px solid var(--bg-ui-border);
+    border-radius: 22px;
+    background: var(--bg-ui-surface);
+    color: var(--bg-ui-text);
+    box-shadow: 0 28px 90px #100b204d, inset 0 1px 0 #ffffff16;
+    font-size: 13px;
+}
+.bg-win-overlay .bg-win-head {
+    padding: 20px 24px;
+    gap: 16px;
+    background: linear-gradient(110deg, var(--bg-ui-soft), transparent 75%);
+}
+.bg-win-overlay .bg-win-portrait {
+    width: 62px; height: 62px; border-radius: 17px;
+    border: 1px solid var(--bg-ui-border);
+    background: var(--bg-ui-panel);
+    box-shadow: 0 0 0 4px var(--bg-ui-soft);
+}
+.bg-win-overlay .bg-win-title { font-size: 20px; letter-spacing: .06em; color: var(--bg-ui-accent); }
+.bg-win-overlay .bg-win-sub { color: var(--bg-ui-muted); opacity: 1; margin-top: 4px; }
+.bg-win-overlay .bg-win-close { width: 36px; height: 36px; background: var(--bg-ui-panel); }
+.bg-win-overlay .bg-win-tabs { width: 164px; min-width: 0; padding: 16px 10px; background: var(--bg-ui-soft); }
+.bg-win-overlay .bg-win-tab { min-height: 43px; padding: 10px 12px; margin-bottom: 6px; opacity: 1; color: var(--bg-ui-muted); border: 1px solid transparent; }
+.bg-win-overlay .bg-win-tab[data-active='1'] { background: var(--bg-ui-panel); color: var(--bg-ui-accent); border-color: var(--bg-ui-border); box-shadow: inset 3px 0 0 var(--bg-ui-accent); }
+.bg-win-overlay .bg-win-panel { padding: 22px 24px 28px; background: var(--bg-ui-surface); scrollbar-color: var(--bg-ui-border) transparent; }
+.bg-win-overlay .bg-win-h { font-size: 15px; letter-spacing: .025em; color: var(--bg-ui-accent); padding-bottom: 12px; margin-bottom: 18px; }
+.bg-win-overlay .bg-field { padding: 12px 14px; margin-bottom: 10px; border: 1px solid var(--bg-ui-border); border-radius: 12px; background: var(--bg-ui-panel); }
+.bg-win-overlay .bg-field-title { font-weight: 600; color: var(--bg-ui-text); }
+.bg-win-overlay .bg-field-hint { color: var(--bg-ui-muted); opacity: 1; }
+.bg-win-overlay .bg-input,
+.bg-win-overlay .bg-textarea,
+.bg-win-overlay .bg-select {
+    min-height: 38px; border-radius: 9px; padding: 8px 10px;
+    background: var(--bg-ui-field); color: var(--bg-ui-text); border-color: var(--bg-ui-border);
+}
+.bg-win-overlay .bg-select option { background: var(--bg-ui-field); color: var(--bg-ui-text); }
+.bg-win-overlay .bg-btn { min-height: 36px; padding: 8px 13px; border-radius: 9px; background: var(--bg-ui-panel); color: var(--bg-ui-text); border-color: var(--bg-ui-border); }
+.bg-win-overlay .bg-btn-primary { background: var(--bg-ui-primary); color: var(--bg-ui-primary-text); border-color: var(--bg-ui-primary); font-weight: 700; }
+.bg-win-overlay .bg-btn-danger { color: #f3a9a4; }
+.bg-win-overlay[data-bg-realm='void'] .bg-btn-danger { color: #9c3839; }
+.bg-win-overlay .bg-btn:not(:disabled):hover { border-color: var(--bg-ui-accent); box-shadow: 0 2px 8px var(--bg-ui-soft); }
+.bg-win-overlay .bg-btn-primary:not(:disabled):hover { background: var(--bg-ui-primary); filter: brightness(1.06); }
+.bg-win-overlay :is(.bg-input,.bg-textarea,.bg-select,.bg-btn,.bg-win-tab,.bg-win-close):focus-visible { outline: 2px solid var(--bg-ui-accent); outline-offset: 3px; }
+.bg-win-overlay :is(.bg-note,.bg-pre,.bg-prompt-item,.bg-booklist,.bg-poolrow) { border-color: var(--bg-ui-border); background: var(--bg-ui-panel); color: var(--bg-ui-text); border-radius: 11px; }
+.bg-win-overlay .bg-note { color: var(--bg-ui-muted); line-height: 1.8; }
+.bg-win-overlay .bg-win-foot { padding: 14px 24px; background: var(--bg-ui-soft); }
+@media (max-width: 640px) {
+    .bg-win-overlay { padding: 8px; }
+    .bg-win-overlay .bg-win-card { max-height: 94dvh; border-radius: 16px; }
+    .bg-win-overlay .bg-win-head { padding: 14px; gap: 10px; }
+    .bg-win-overlay .bg-win-title { font-size: 17px; }
+    .bg-win-overlay .bg-win-portrait { width: 46px; height: 46px; border-radius: 12px; }
+    .bg-win-overlay .bg-win-tabs { width: 100%; padding: 8px; }
+    .bg-win-overlay .bg-win-tab { width: auto; min-height: 40px; margin: 0; flex-shrink: 0; }
+    .bg-win-overlay .bg-win-panel { padding: 14px; }
+    .bg-win-overlay .bg-field { padding: 11px; }
+    .bg-win-overlay .bg-win-foot { padding: 12px 14px; }
+}
+@media (prefers-reduced-motion: reduce) { .bg-win-overlay .bg-win-card { animation: none; } }
